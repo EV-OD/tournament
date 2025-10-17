@@ -40,6 +40,16 @@ export default function AuthPageLayout({
     <div className="grid min-h-svh lg:grid-cols-2">
       {/* Left: Form area with branding */}
       <div className="flex flex-col gap-4 p-6 md:p-10">
+        {/* Branding/Logo Header */}
+        <div className="flex justify-center gap-2 md:justify-start">
+          <Link href="/" className="flex items-center gap-2 font-medium">
+            <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md">
+              <Trophy className="size-5" />
+            </div>
+            <span className="text-xl font-semibold">Futsal Manager</span>
+          </Link>
+        </div>
+
         {/* Form Container - Centered */}
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-sm">{children}</div>
@@ -54,8 +64,8 @@ export default function AuthPageLayout({
           className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
         />
 
-        {/* Gradient overlay for better text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent" />
+        {/* Gradient overlay - heavily focused on bottom for darker background */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 via-40% to-black/10" />
 
         {/* Hero caption */}
         <div className="absolute bottom-0 left-0 right-0 p-10 text-white">
