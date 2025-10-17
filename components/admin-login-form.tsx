@@ -2,13 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Field,
   FieldDescription,
   FieldGroup,
+  FieldSeparator,
   FieldLabel,
   FieldContent,
-  FieldSeparator,
 } from "@/components/ui/field";
 
 import { auth, db } from "@/lib/firebase";
@@ -145,25 +146,24 @@ export function AdminLoginForm({
 
   return (
     <form
-      className={cn("flex flex-col gap-4 w-full max-w-md mx-auto", className)}
+      className={cn("flex flex-col gap-6", className)}
       onSubmit={handleEmailPassword}
       {...props}
     >
-      <FieldGroup>
-        <div className="flex flex-col items-center gap-1 text-center mb-1">
-          <h1 className="text-2xl font-bold">Admin Sign in</h1>
-          <p className="text-muted-foreground text-sm">
-            Sign in with your admin email & password
-          </p>
-        </div>
+      <div className="flex flex-col gap-2 text-center">
+        <h1 className="text-2xl font-bold tracking-tight">Admin Portal</h1>
+        <p className="text-sm text-muted-foreground">
+          Sign in to access the admin dashboard
+        </p>
+      </div>
 
+      <FieldGroup>
         <Field>
           <FieldLabel htmlFor="email">Email</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="email"
               type="email"
-              className="w-full rounded border px-3 py-1"
               placeholder="admin@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -183,11 +183,10 @@ export function AdminLoginForm({
         <Field>
           <FieldLabel htmlFor="password">Password</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="password"
               type="password"
-              className="w-full rounded border px-3 py-1"
-              placeholder="Your password"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -203,12 +202,12 @@ export function AdminLoginForm({
           </FieldContent>
         </Field>
         <Field>
-          <div className="mt-1 text-right">
+          <div className="mt-2 flex items-center justify-end">
             <button
               type="button"
               onClick={handlePasswordReset}
               disabled={resetLoading || loading}
-              className="text-sm text-muted-foreground hover:text-foreground underline"
+              className="text-sm font-medium text-primary hover:underline underline-offset-4"
             >
               {resetLoading ? "Sending..." : "Forgot password?"}
             </button>
@@ -253,18 +252,16 @@ export function AdminLoginForm({
                 d="M24 48c6.48 0 11.92-2.14 15.9-5.8l-7.97-6.18C29.65 35.78 27 36.5 24 36.5c-6.98 0-12.9-4.64-15-10.92l-7.99 6.2C6.96 42.61 14.84 48 24 48z"
               />
             </svg>
-            {loading ? "Signing in…" : "Sign in with Google"}
+            {loading ? "Signing in..." : "Continue with Google"}
           </Button>
         </Field>
 
-        <Field>
-          <div className="mt-2 text-center">
-            <FieldDescription>Admin access only.</FieldDescription>
-          </div>
-        </Field>
+        <div className="text-center text-sm">
+          <p className="text-muted-foreground">
+            Admin accounts are managed by system administrators.
+          </p>
+        </div>
       </FieldGroup>
-
-      {error && <div className="text-sm text-destructive">{error}</div>}
     </form>
   );
 }

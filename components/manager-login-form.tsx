@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Field,
   FieldDescription,
@@ -156,26 +157,25 @@ export function ManagerLoginForm({
 
   return (
     <form
-      className={cn("flex flex-col gap-4 w-full max-w-md mx-auto", className)}
+      className={cn("flex flex-col gap-6", className)}
       onSubmit={handleEmailPassword}
       {...props}
     >
-      <FieldGroup>
-        <div className="flex flex-col items-center gap-1 text-center mb-1">
-          <h1 className="text-2xl font-bold">Sign in as Manager</h1>
-          <p className="text-muted-foreground text-sm">
-            Sign in with email & password or continue with Google
-          </p>
-        </div>
+      <div className="flex flex-col gap-2 text-center">
+        <h1 className="text-2xl font-bold tracking-tight">Manager Portal</h1>
+        <p className="text-sm text-muted-foreground">
+          Sign in to access your management dashboard
+        </p>
+      </div>
 
+      <FieldGroup>
         <Field>
           <FieldLabel htmlFor="email">Email</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="email"
               type="email"
-              className="w-full rounded border px-3 py-1"
-              placeholder="you@example.com"
+              placeholder="manager@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -194,11 +194,10 @@ export function ManagerLoginForm({
         <Field>
           <FieldLabel htmlFor="password">Password</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="password"
               type="password"
-              className="w-full rounded border px-3 py-1"
-              placeholder="Your password"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -212,12 +211,12 @@ export function ManagerLoginForm({
               </p>
             )}
           </FieldContent>
-          <div className="mt-1 text-right">
+          <div className="mt-2 flex items-center justify-end">
             <button
               type="button"
               onClick={handlePasswordReset}
               disabled={resetLoading || loading}
-              className="text-sm text-muted-foreground hover:text-foreground underline"
+              className="text-sm font-medium text-primary hover:underline underline-offset-4"
             >
               {resetLoading ? "Sending..." : "Forgot password?"}
             </button>
@@ -267,22 +266,18 @@ export function ManagerLoginForm({
           </Button>
         </Field>
 
-        <Field>
-          <div className="mt-2 text-center">
-            <FieldDescription>
-              Don&apos;t have an account?{" "}
-              <a
-                href="/auth/register/manager"
-                className="underline underline-offset-4"
-              >
-                Sign up as Manager
-              </a>
-            </FieldDescription>
-          </div>
-        </Field>
+        <div className="text-center text-sm">
+          <span className="text-muted-foreground">
+            Need a manager account?{" "}
+          </span>
+          <a
+            href="/auth/register/manager"
+            className="font-medium text-primary hover:underline underline-offset-4"
+          >
+            Register here
+          </a>
+        </div>
       </FieldGroup>
-
-      {error && <div className="text-sm text-destructive">{error}</div>}
     </form>
   );
 }

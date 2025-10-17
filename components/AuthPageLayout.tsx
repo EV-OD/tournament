@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { Trophy } from "lucide-react";
+import Link from "next/link";
 
 interface AuthPageLayoutProps {
   heroImage: string;
@@ -14,9 +16,9 @@ interface AuthPageLayoutProps {
  * AuthPageLayout
  *
  * Reusable layout for all auth pages (login/register for all roles).
- * Provides a two-column design:
- * - Left: Form area with backdrop card
- * - Right: Full-bleed hero image with overlay and caption
+ * Provides a clean two-column design:
+ * - Left: Branding header + Form area with clean spacing
+ * - Right: Full-height hero image with overlay and caption
  *
  * Usage:
  * <AuthPageLayout
@@ -35,31 +37,42 @@ export default function AuthPageLayout({
   children,
 }: AuthPageLayoutProps) {
   return (
-    <div className="flex min-h-screen">
-      {/* Left: Form area - centered and using full height */}
-      <div className="flex-1 flex flex-col justify-center items-center p-6 md:p-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <div className="w-full max-w-md">
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-8 border border-slate-200 dark:border-slate-700">
-            {children}
-          </div>
+    <div className="grid min-h-svh lg:grid-cols-2">
+      {/* Left: Form area with branding */}
+      <div className="flex flex-col gap-4 p-6 md:p-10">
+        {/* Branding/Logo Header */}
+        <div className="flex justify-center gap-2 md:justify-start">
+          <Link href="/" className="flex items-center gap-2 font-medium">
+            <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md">
+              <Trophy className="size-5" />
+            </div>
+            <span className="text-xl font-semibold">Futsal Manager</span>
+          </Link>
+        </div>
+
+        {/* Form Container - Centered */}
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-sm">{children}</div>
         </div>
       </div>
 
       {/* Right: Hero image column - hidden on mobile, visible on lg+ screens */}
-      <div className="hidden lg:flex lg:flex-1 relative h-screen">
+      <div className="relative hidden bg-muted lg:block">
         <img
           src={heroImage}
           alt={heroAlt}
-          className="w-full h-screen object-cover"
+          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
         />
 
         {/* Gradient overlay for better text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent" />
 
         {/* Hero caption */}
-        <div className="absolute bottom-12 left-12 right-12 text-white z-10">
-          <h2 className="text-3xl font-bold mb-3">{heroTitle}</h2>
-          <p className="text-lg text-white/90">{heroDescription}</p>
+        <div className="absolute bottom-0 left-0 right-0 p-10 text-white">
+          <h2 className="text-3xl font-bold tracking-tight mb-2">
+            {heroTitle}
+          </h2>
+          <p className="text-lg text-white/90 max-w-md">{heroDescription}</p>
         </div>
       </div>
     </div>

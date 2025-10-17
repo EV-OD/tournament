@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Field,
   FieldDescription,
@@ -20,6 +21,8 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { mapAuthError } from "@/lib/auth";
 
 /**
  * RegisterForm
@@ -50,6 +53,12 @@ export function RegisterForm({
   const [confirm, setConfirm] = useState("");
 
   const next = searchParams?.get("next") ?? "/";
+
+  // Inline field errors
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   // If the page prefilled an email via query param (e.g., forwarded from login),
   // initialize the email input.
@@ -126,7 +135,11 @@ export function RegisterForm({
       router.replace(destination);
     } catch (err: any) {
       console.error("Email registration error:", err);
-      setError(err?.message ?? "Registration failed. Try again.");
+      const info = mapAuthError(err);
+      if (info.field === "email") setEmailError(info.message);
+      if (info.field === "password") setPasswordError(info.message);
+      toast.error(info.message, { description: info.title });
+      setError(info.message);
     } finally {
       setLoading(false);
     }
@@ -152,91 +165,119 @@ export function RegisterForm({
       router.replace(destination);
     } catch (err: any) {
       console.error("Google registration error:", err);
-      setError(err?.message ?? "Google sign-in failed");
+      const info = mapAuthError(err);
+      toast.error(info.message, { description: info.title });
+      setError(info.message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleNotImplemented = (providerName: string) => {
-    alert(`${providerName} registration is not implemented yet.`);
+    toast.info(`${providerName} registration is not implemented yet.`);
   };
 
   return (
     <form
-      className={cn("flex flex-col gap-4 w-full max-w-md mx-auto", className)}
+      className={cn("flex flex-col gap-6", className)}
       onSubmit={handleEmailRegister}
       {...props}
     >
-      <FieldGroup>
-        <div className="flex flex-col items-center gap-1 text-center mb-1">
-          <h1 className="text-2xl font-bold">Create account</h1>
-          <p className="text-muted-foreground text-sm">
-            Register with email & password or continue with Google
-          </p>
-        </div>
+      <div className="flex flex-col gap-2 text-center">
+        <h1 className="text-2xl font-bold tracking-tight">
+          {role === "manager" ? "Create Manager Account" : "Create an account"}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Enter your information to get started
+        </p>
+      </div>
 
+      <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="name">Full name</FieldLabel>
+          <FieldLabel htmlFor="name">Full Name</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="name"
               type="text"
-              className="w-full rounded border px-3 py-1"
-              placeholder="Your full name"
+              placeholder="Enter your full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
               disabled={loading}
+              aria-invalid={!!nameError}
+              aria-describedby={nameError ? "name-error" : undefined}
             />
+            {nameError && (
+              <p id="name-error" className="text-sm text-destructive mt-1">
+                {nameError}
+              </p>
+            )}
           </FieldContent>
         </Field>
 
         <Field>
           <FieldLabel htmlFor="email">Email</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="email"
               type="email"
-              className="w-full rounded border px-3 py-1"
-              placeholder="you@example.com"
+              placeholder="name@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={loading}
+              aria-invalid={!!emailError}
+              aria-describedby={emailError ? "email-error" : undefined}
             />
+            {emailError && (
+              <p id="email-error" className="text-sm text-destructive mt-1">
+                {emailError}
+              </p>
+            )}
           </FieldContent>
         </Field>
 
         <Field>
           <FieldLabel htmlFor="password">Password</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="password"
               type="password"
-              className="w-full rounded border px-3 py-1"
-              placeholder="Create a password"
+              placeholder="Create a password (min. 6 characters)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               disabled={loading}
+              aria-invalid={!!passwordError}
+              aria-describedby={passwordError ? "password-error" : undefined}
             />
+            {passwordError && (
+              <p id="password-error" className="text-sm text-destructive mt-1">
+                {passwordError}
+              </p>
+            )}
           </FieldContent>
         </Field>
 
         <Field>
-          <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
+          <FieldLabel htmlFor="confirm">Confirm Password</FieldLabel>
           <FieldContent>
-            <input
+            <Input
               id="confirm"
               type="password"
-              className="w-full rounded border px-3 py-1"
-              placeholder="Confirm password"
+              placeholder="Re-enter your password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               required
               disabled={loading}
+              aria-invalid={!!confirmError}
+              aria-describedby={confirmError ? "confirm-error" : undefined}
             />
+            {confirmError && (
+              <p id="confirm-error" className="text-sm text-destructive mt-1">
+                {confirmError}
+              </p>
+            )}
           </FieldContent>
         </Field>
 
@@ -283,19 +324,18 @@ export function RegisterForm({
           </Button>
         </Field>
 
-        <Field>
-          <div className="mt-2 text-center">
-            <FieldDescription>
-              Already have an account?{" "}
-              <a href="/auth/login" className="underline underline-offset-4">
-                Sign in
-              </a>
-            </FieldDescription>
-          </div>
-        </Field>
+        <div className="text-center text-sm">
+          <span className="text-muted-foreground">
+            Already have an account?{" "}
+          </span>
+          <a
+            href={role === "manager" ? "/auth/login/manager" : "/auth/login"}
+            className="font-medium text-primary hover:underline underline-offset-4"
+          >
+            Sign in
+          </a>
+        </div>
       </FieldGroup>
-
-      {error && <div className="text-sm text-destructive">{error}</div>}
     </form>
   );
 }
