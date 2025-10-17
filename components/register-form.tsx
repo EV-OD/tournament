@@ -287,7 +287,7 @@ export function RegisterForm({
           <div className="mt-2 text-center">
             <FieldDescription>
               Already have an account?{" "}
-              <a href="/login" className="underline underline-offset-4">
+              <a href="/auth/login" className="underline underline-offset-4">
                 Sign in
               </a>
             </FieldDescription>

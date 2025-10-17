@@ -47,7 +47,7 @@ export function LoginForm({
   const next = searchParams?.get("next") ?? "/";
 
   const redirectToRegisterWithEmail = (userEmail?: string) => {
-    const url = `/register${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ""}`;
+    const url = `/auth/register${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ""}`;
     router.replace(url);
   };
 
@@ -282,7 +282,7 @@ export function LoginForm({
           <div className="mt-2 text-center">
             <FieldDescription>
               Don&apos;t have an account?{" "}
-              <a href="/register" className="underline underline-offset-4">
+              <a href="/auth/register" className="underline underline-offset-4">
                 Sign up
               </a>
             </FieldDescription>

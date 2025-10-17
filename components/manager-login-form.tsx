@@ -50,7 +50,7 @@ export function ManagerLoginForm({
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const redirectToRegisterWithEmail = (userEmail?: string) => {
-    const url = `/register/manager${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ""}`;
+    const url = `/auth/register/manager${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ""}`;
     router.replace(url);
   };
 
@@ -272,7 +272,7 @@ export function ManagerLoginForm({
             <FieldDescription>
               Don&apos;t have an account?{" "}
               <a
-                href="/register/manager"
+                href="/auth/register/manager"
                 className="underline underline-offset-4"
               >
                 Sign up as Manager

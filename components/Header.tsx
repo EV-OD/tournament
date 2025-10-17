@@ -40,11 +40,8 @@ export default function Header() {
     return unsub;
   }, []);
 
-  // Hide header on login and register pages
-  if (
-    pathname &&
-    (pathname.startsWith("/login") || pathname.startsWith("/register"))
-  ) {
+  // Hide header on auth pages (login and register)
+  if (pathname && pathname.startsWith("/auth")) {
     return null;
   }
 
@@ -58,7 +55,7 @@ export default function Header() {
     try {
       await signOut(auth);
       // redirect to login after sign out
-      router.replace("/login");
+      router.replace("/auth/login");
     } catch (err) {
       console.error("Sign out failed:", err);
     }
@@ -211,7 +208,7 @@ export default function Header() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Link href="/login">
+              <Link href="/auth/login">
                 <Button size="sm">Sign in</Button>
               </Link>
             )}
@@ -264,7 +261,7 @@ export default function Header() {
                   </div>
                 ) : (
                   <div className="px-3">
-                    <Link href="/login" className="block">
+                    <Link href="/auth/login" className="block">
                       <Button size="sm">Sign in</Button>
                     </Link>
                   </div>

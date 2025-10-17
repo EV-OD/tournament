@@ -40,6 +40,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           const userRole = userDoc.exists()
             ? (userDoc.data().role as UserRole)
             : null;
+          if (!userRole) {
+            throw new Error("User role not found");
+          }
           setUser({ ...firebaseUser, role: userRole });
           setRole(userRole);
         } catch (error) {

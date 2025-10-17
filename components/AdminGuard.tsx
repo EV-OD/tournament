@@ -1,5 +1,3 @@
-tournament\components\AdminGuard.tsx
-Create AdminGuard for admin role protection
 "use client";
 
 import React, { useEffect } from "react";
@@ -23,7 +21,7 @@ export default function AdminGuard({
   useEffect(() => {
     if (!loading) {
       if (!user || role !== "admin") {
-        router.replace("/login/admin");
+        router.replace("/auth/login/admin");
       }
     }
   }, [user, loading, role, router]);

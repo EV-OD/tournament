@@ -1,4 +1,3 @@
-tournament\components\ManagerGuard.tsx
 "use client";
 
 import React, { useEffect } from "react";
@@ -22,7 +21,7 @@ export default function ManagerGuard({
   useEffect(() => {
     if (!loading) {
       if (!user || role !== "manager") {
-        router.replace("/login/manager");
+        router.replace("/auth/login/manager");
       }
     }
   }, [user, loading, role, router]);

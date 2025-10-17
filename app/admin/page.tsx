@@ -14,7 +14,6 @@ import {
   limit,
 } from "firebase/firestore";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import AuthGuard from "@/components/AuthGuard";
 
 import {
   SidebarProvider,
@@ -57,6 +56,7 @@ import {
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import AdminGuard from "@/components/AdminGuard";
 
 /**
  * Admin Dashboard
@@ -236,7 +236,7 @@ export default function AdminPanel() {
   // If still loading or not authorized
   if (loading) {
     return (
-      <AuthGuard>
+      <AdminGuard>
         <div className="container mx-auto p-6">
           <Card>
             <CardContent>
@@ -246,13 +246,13 @@ export default function AdminPanel() {
             </CardContent>
           </Card>
         </div>
-      </AuthGuard>
+      </AdminGuard>
     );
   }
 
   if (isAuthorized === false) {
     return (
-      <AuthGuard>
+      <AdminGuard>
         <div className="container mx-auto p-6">
           <Card>
             <CardContent>
@@ -265,13 +265,13 @@ export default function AdminPanel() {
             </CardContent>
           </Card>
         </div>
-      </AuthGuard>
+      </AdminGuard>
     );
   }
 
   // Main dashboard UI
   return (
-    <AuthGuard>
+    <AdminGuard>
       <SidebarProvider defaultOpen>
         <div className="min-h-screen flex">
           <Sidebar side="left" variant="floating" collapsible="icon">
@@ -584,6 +584,6 @@ export default function AdminPanel() {
           </SidebarInset>
         </div>
       </SidebarProvider>
-    </AuthGuard>
+    </AdminGuard>
   );
 }

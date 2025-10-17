@@ -1,4 +1,3 @@
-tournament\components\UserGuard.tsx
 "use client";
 
 import React, { useEffect } from "react";
@@ -22,7 +21,7 @@ export default function UserGuard({
   useEffect(() => {
     if (!loading) {
       if (!user || role !== "user") {
-        router.replace("/login");
+        router.replace("/auth/login");
       }
     }
   }, [user, loading, role, router]);

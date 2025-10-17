@@ -47,7 +47,7 @@ export default function Auth() {
   // Not authenticated -> show Sign In button
   if (!user) {
     return (
-      <Link href="/login" className="inline-block">
+      <Link href="/auth/login" className="inline-block">
         <Button variant="default" size="sm">
           Sign in
         </Button>

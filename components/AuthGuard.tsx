@@ -9,7 +9,7 @@ import { auth } from "@/lib/firebase";
  * AuthGuard
  *
  * Client component that protects routes by redirecting unauthenticated users
- * to the `/login` page. It preserves the originally requested path in a `next`
+ * to the `/auth/login` page. It preserves the originally requested path in a `next`
  * query parameter so the user can be returned after login.
  *
  * Usage:
@@ -37,13 +37,14 @@ export default function AuthGuard({
       setUser(u);
       setChecked(true);
 
-      // If no user and not already on the login page, redirect to /login
+      // If no user and not already on the login page, redirect to /auth/login
       // Preserve the requested path in the `next` query param
       if (!u) {
-        const currentPath = typeof window !== "undefined" ? window.location.pathname : "/";
-        // Avoid redirect loop: if already on /login, don't redirect
-        if (!currentPath.startsWith("/login")) {
-          const redirectTo = `/login?next=${encodeURIComponent(currentPath)}`;
+        const currentPath =
+          typeof window !== "undefined" ? window.location.pathname : "/";
+        // Avoid redirect loop: if already on /auth/login, don't redirect
+        if (!currentPath.startsWith("/auth/login")) {
+          const redirectTo = `/auth/login?next=${encodeURIComponent(currentPath)}`;
           // use replace so browser history isn't filled with intermediate redirects
           router.replace(redirectTo);
         }
@@ -72,6 +73,6 @@ export default function AuthGuard({
   }
 
   // If we got here, the user is not authenticated and we've already triggered
-  // a redirect to /login. Render nothing while the router replaces the route.
+  // a redirect to /auth/login. Render nothing while the router replaces the route.
   return null;
 }
