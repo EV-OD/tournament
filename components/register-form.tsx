@@ -33,9 +33,12 @@ import { useEffect, useState } from "react";
  * <RegisterForm className="..." />
  */
 export function RegisterForm({
+  role = "user",
   className,
   ...props
-}: React.ComponentProps<"form">) {
+}: {
+  role?: "user" | "manager";
+} & React.ComponentProps<"form">) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -55,7 +58,10 @@ export function RegisterForm({
     if (pre) setEmail(pre);
   }, [searchParams]);
 
-  const safeUpsertUserDoc = async (uid: string, data: Partial<Record<string, any>>) => {
+  const safeUpsertUserDoc = async (
+    uid: string,
+    data: Partial<Record<string, any>>,
+  ) => {
     try {
       const userRef = doc(db, "users", uid);
       const snap = await getDoc(userRef);
@@ -70,7 +76,7 @@ export function RegisterForm({
       if (!snap.exists()) {
         await setDoc(userRef, {
           ...base,
-          role: "user",
+          role: role,
           createdAt: serverTimestamp(),
         });
       } else {
@@ -114,8 +120,10 @@ export function RegisterForm({
         displayName: name.trim(),
         photoURL: user.photoURL ?? null,
       });
-      // Redirect to next
-      router.replace(next);
+      // Redirect to next; if next is not provided use role-specific fallback
+      const destination =
+        next && next !== "/" ? next : role === "manager" ? "/manager" : "/";
+      router.replace(destination);
     } catch (err: any) {
       console.error("Email registration error:", err);
       setError(err?.message ?? "Registration failed. Try again.");
@@ -135,10 +143,13 @@ export function RegisterForm({
       // Ensure users/{uid} doc exists
       await safeUpsertUserDoc(user.uid, {
         email: user.email,
-        displayName: user.displayName ?? name.trim() || null,
+        displayName: user.displayName ?? (name.trim() || null),
         photoURL: user.photoURL ?? null,
       });
-      router.replace(next);
+      // Redirect to role-specific destination when `next` is not provided
+      const destination =
+        next && next !== "/" ? next : role === "manager" ? "/manager" : "/";
+      router.replace(destination);
     } catch (err: any) {
       console.error("Google registration error:", err);
       setError(err?.message ?? "Google sign-in failed");
