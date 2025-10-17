@@ -119,11 +119,12 @@ export default function RegisterPage() {
       </div>
 
       {/* Right: Illustration / placeholder - show only on large screens */}
-      <div className="relative hidden lg:flex items-center justify-center bg-gray-50 overflow-hidden">
+      <div className="relative hidden lg:flex items-stretch h-screen justify-center bg-gray-50 overflow-hidden">
         <img
           src="/images/placeholder-register.jpg"
           alt="Illustration: onboarding and account creation"
-          className="w-full h-full object-cover"
+          className="w-auto h-full max-h-screen object-cover"
+          style={{ maxHeight: "100vh" }}
         />
         {/* subtle overlay for better contrast */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent pointer-events-none" />
