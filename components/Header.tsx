@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -30,14 +31,41 @@ export default function Header() {
   const router = useRouter();
 
   const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Auth subscription
+  // Auth subscription + fetch role from Firestore
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    let mounted = true;
+    const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+
+      // Clear role when signed out
+      if (!u) {
+        setRole(null);
+        return;
+      }
+
+      // Try to load the user's role from Firestore (collection `users/{uid}`)
+      try {
+        const userRef = doc(db, "users", u.uid);
+        const snap = await getDoc(userRef);
+        if (mounted && snap.exists()) {
+          const data = snap.data() as any;
+          setRole(data?.role ?? null);
+        } else if (mounted) {
+          setRole(null);
+        }
+      } catch (err) {
+        console.error("Failed to fetch user role:", err);
+        if (mounted) setRole(null);
+      }
     });
-    return unsub;
+
+    return () => {
+      mounted = false;
+      unsub();
+    };
   }, []);
 
   // Hide header on auth pages (login and register)
@@ -45,11 +73,17 @@ export default function Header() {
     return null;
   }
 
-  const navLinks = [
-    { href: "/", label: "Home" },
-    { href: "/venues", label: "Venues" },
-    { href: "/about", label: "About" },
-  ];
+  // Role-aware navigation:
+  // - regular users (or unauthenticated) see Home / Venues / About
+  // - managers and admins see Dashboard
+  const navLinks =
+    role === "manager" || role === "admin"
+      ? [{ href: "/dashboard", label: "Dashboard" }]
+      : [
+          { href: "/", label: "Home" },
+          { href: "/venues", label: "Venues" },
+          { href: "/about", label: "About" },
+        ];
 
   const handleSignOut = async () => {
     try {
