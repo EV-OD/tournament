@@ -63,6 +63,17 @@ export default function AuthPageLayout({
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-sm">{children}</div>
         </div>
+
+        {/* Role switcher component at bottom of left column */}
+        {(isLogin || isRegister) && (
+          <AuthRoleSwitcher
+            currentRole={roleContext}
+            mode={isLogin ? "login" : "register"}
+            showAdmin={roleContext === "admin"}
+            compact={true}
+            className="w-full"
+          />
+        )}
       </div>
 
       {/* Right: Hero image column - hidden on mobile, visible on lg+ screens */}
