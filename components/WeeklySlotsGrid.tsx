@@ -120,15 +120,16 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const handleUpdateSlotStatus = async (status: string) => {
     if (!selectedSlot) return;
     try {
-      if (selectedSlot.id) {
-        await updateDoc(doc(db, "slots", selectedSlot.id), { status });
-      } else {
-        await addDoc(collection(db, "slots"), {
-          ...selectedSlot,
-          status,
-          createdAt: serverTimestamp(),
-        });
-      }
+      const slotRef = selectedSlot.id
+        ? doc(db, "slots", selectedSlot.id)
+        : doc(collection(db, "slots"));
+      await (selectedSlot.id
+        ? updateDoc(slotRef, { status })
+        : addDoc(collection(db, "slots"), {
+            ...selectedSlot,
+            status,
+            createdAt: serverTimestamp(),
+          }));
       toast.success(`Slot status updated to ${status}`);
       setIsSlotUpdateDialogOpen(false);
       fetchData();
@@ -141,31 +142,45 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const handleConfirmBooking = async () => {
     if (!selectedSlot || !user) return;
     const { date, startTime, groundId, price } = selectedSlot;
+    const batch = writeBatch(db);
     try {
-      const batch = writeBatch(db);
-      batch.set(doc(collection(db, "bookings")), {
-        userId: user.uid,
-        venueId: groundId,
-        date,
-        startTime,
-        status: "CONFIRMED",
-        price,
-        createdAt: serverTimestamp(),
-      });
-      const existingSlot = slots.find(
-        (s) => s.date === date && s.startTime === startTime
+      const existingSlotQuery = query(
+        collection(db, "slots"),
+        where("groundId", "==", groundId),
+        where("date", "==", date),
+        where("startTime", "==", startTime)
       );
-      if (existingSlot) {
-        batch.update(doc(db, "slots", existingSlot.id), { status: "BOOKED" });
-      } else {
-        batch.set(doc(collection(db, "slots")), {
+      const existingSlotSnapshot = await getDocs(existingSlotQuery);
+
+      let slotId: string;
+      if (existingSlotSnapshot.empty) {
+        const newSlotRef = doc(collection(db, "slots"));
+        batch.set(newSlotRef, {
           groundId,
           date,
           startTime,
           status: "BOOKED",
           createdAt: serverTimestamp(),
         });
+        slotId = newSlotRef.id;
+      } else {
+        const slotDoc = existingSlotSnapshot.docs[0];
+        slotId = slotDoc.id;
+        batch.update(slotDoc.ref, { status: "BOOKED" });
       }
+
+      const bookingRef = doc(collection(db, "bookings"));
+      batch.set(bookingRef, {
+        userId: user.uid,
+        venueId: groundId,
+        slotId,
+        date,
+        startTime,
+        status: "CONFIRMED",
+        price,
+        createdAt: serverTimestamp(),
+      });
+
       await batch.commit();
       toast.success("Booking confirmed!");
       setIsBookingDialogOpen(false);
@@ -258,8 +273,10 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const gridHours = Array.from(
     {
-      length:
-        parseInt(endTime.split(":")[0]) - parseInt(startTime.split(":")[0]),
+      length: Math.max(
+        0,
+        parseInt(endTime.split(":")[0]) - parseInt(startTime.split(":")[0])
+      ),
     },
     (_, i) =>
       `${(parseInt(startTime.split(":")[0]) + i)
@@ -274,18 +291,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
         {error}
       </div>
     );
-  if (isManager && slots.length === 0) {
-    return (
-      <div className="p-4 text-center">
-        <p className="text-muted-foreground mb-4">
-          No slots have been generated for this venue.
-        </p>
-        <Button onClick={() => setIsGenerateSlotsDialogOpen(true)}>
-          Generate Weekly Slots
-        </Button>
-      </div>
-    );
-  }
 
   const renderSlot = (date: Date, hour: string, isMobile: boolean = false) => {
     const dateString = date.toISOString().split("T")[0];
@@ -297,7 +302,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     const statusInfo = getStatusInfo(status);
     const canClick = !isPast && (isManager || status === "AVAILABLE");
     const cellClass = isPast
-      ? "bg-gray-300 cursor-not-allowed"
+      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
       : `${statusInfo.color} ${
           canClick ? statusInfo.hover : "cursor-not-allowed"
         }`;
@@ -305,10 +310,10 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     return (
       <div
         key={`${dateString}-${hour}`}
-        className={`p-1 rounded-md text-center font-semibold ${
+        className={`rounded text-center font-semibold transition-colors duration-150 ${
           canClick ? "cursor-pointer" : ""
         } ${cellClass} flex flex-col justify-center items-center ${
-          isMobile ? "h-16 text-xs" : "h-full text-sm"
+          isMobile ? "h-16 text-xs p-1" : "h-full text-sm"
         }`}
         onClick={() => canClick && handleSlotClick(slot, dateString, hour)}
       >
@@ -331,69 +336,87 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           onClick={() => setIsGenerateSlotsDialogOpen(true)}
           className="mb-4"
         >
-          Re-Generate Slots
+          {slots.length > 0 ? "Re-Generate Slots" : "Generate Weekly Slots"}
         </Button>
       )}
 
-      {/* Mobile View */}
-      <div className="sm:hidden">
-        {weekDates.map((date) => (
-          <div key={date.toISOString()} className="mb-4">
-            <h3 className="font-bold text-lg mb-2">
-              {days[date.getDay()]}{" "}
-              <span className="text-sm text-muted-foreground">
-                ({date.getDate()})
-              </span>
-            </h3>
-            <div className="grid grid-cols-3 gap-2">
-              {gridHours.map((hour) => renderSlot(date, hour, true))}
-            </div>
-          </div>
-        ))}
-      </div>
+      {slots.length === 0 && !isManager && (
+        <div className="p-6 text-center bg-gray-50 rounded-lg">
+          <h3 className="text-lg font-semibold text-gray-700">
+            No Slots Available
+          </h3>
+          <p className="text-muted-foreground mt-1">
+            The venue manager has not made any time slots available for booking
+            yet. Please check back later.
+          </p>
+        </div>
+      )}
 
-      {/* Desktop View */}
-      <div className="hidden sm:block overflow-x-auto border rounded-lg">
-        <div
-          className="grid text-center text-sm"
-          style={{
-            gridTemplateColumns:
-              "minmax(120px, auto) repeat(7, minmax(90px, 1fr))",
-          }}
-        >
-          <div className="font-bold py-3 px-2 sticky left-0 bg-white z-20 border-b border-r">
-            Time
-          </div>
-          {weekDates.map((date) => (
-            <div
-              key={date.toISOString()}
-              className="font-bold py-3 px-2 border-b"
-            >
-              <div>{days[date.getDay()]}</div>
-              <div className="text-xs text-muted-foreground">
-                {date.getDate()}
+      {slots.length > 0 && (
+        <>
+          {/* Mobile View */}
+          <div className="sm:hidden">
+            {weekDates.map((date) => (
+              <div key={date.toISOString()} className="mb-4">
+                <h3 className="font-bold text-lg mb-2">
+                  {days[date.getDay()]}{" "}
+                  <span className="text-sm text-muted-foreground">
+                    ({date.getDate()})
+                  </span>
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {gridHours.map((hour) => renderSlot(date, hour, true))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
 
-          {gridHours.map((hour, idx) => (
-            <React.Fragment key={hour}>
-              <div className="font-bold py-3 px-2 whitespace-nowrap text-xs flex items-center justify-center sticky left-0 bg-white z-10 border-r border-gray-200">{`${hour} - ${(
-                parseInt(hour.split(":")[0]) + 1
-              )
-                .toString()
-                .padStart(2, "0")}:00`}</div>
+          {/* Desktop View */}
+          <div className="hidden sm:block overflow-x-auto border rounded-lg ">
+            <div
+              className="grid text-center text-sm"
+              style={{
+                gridTemplateColumns:
+                  "minmax(120px, auto) repeat(7, minmax(90px, 1fr))",
+              }}
+            >
+              <div className="font-bold py-3 px-2 sticky left-0 bg-gray-100 z-20 border-b border-r">
+                Time
+              </div>
               {weekDates.map((date) => (
-                <div key={date.toISOString()} className="p-2">
-                  {renderSlot(date, hour)}
+                <div
+                  key={date.toISOString()}
+                  className="font-bold py-3 px-2 border-b"
+                >
+                  <div>{days[date.getDay()]}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {date.getDate()}
+                  </div>
                 </div>
               ))}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
+              {gridHours.map((hour) => (
+                <React.Fragment key={hour}>
+                  <div className="font-semibold h-14 py-3 px-2 whitespace-nowrap text-xs flex items-center justify-center sticky left-0 bg-white z-10 border-b border-t border-r">{`${hour} - ${(
+                    parseInt(hour.split(":")[0]) + 1
+                  )
+                    .toString()
+                    .padStart(2, "0")}:00`}</div>
+                  {weekDates.map((date) => (
+                    <div
+                      key={date.toISOString()}
+                      className="border-b border-t p-1 h-14"
+                    >
+                      {renderSlot(date, hour)}
+                    </div>
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
-      {/* Dialogs */}
+      {/* Dialogs - Now rendered outside the conditional blocks */}
       <Dialog
         open={isGenerateSlotsDialogOpen}
         onOpenChange={setIsGenerateSlotsDialogOpen}

@@ -7,9 +7,15 @@ import { auth, db } from "@/lib/firebase";
 
 export type UserRole = "user" | "manager" | "admin";
 
-// Extend the Firebase User type to include our custom fields
-export interface AuthUser extends User {
+// Create a custom user interface that includes Firestore data
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
   role: UserRole;
+  emailVerified: boolean;
+  // Add any other Firebase User properties you need
 }
 
 interface AuthContextType {
@@ -41,21 +47,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const userDocSnap = await getDoc(userDocRef);
 
         if (userDocSnap.exists()) {
-          const customData = userDocSnap.data();
+          const firestoreData = userDocSnap.data();
 
-          // Create the final user object, ensuring Firestore data takes precedence
+          // Create a new user object with Firestore data taking precedence
           const finalUser: AuthUser = {
             ...firebaseUser,
-            displayName: customData.displayName || firebaseUser.displayName, // Prioritize Firestore displayName
-            role: customData.role || "user", // Default to 'user' role if not set
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            emailVerified: firebaseUser.emailVerified,
+            // Use Firestore displayName if available, otherwise fall back to Firebase Auth
+            displayName:
+              firestoreData.displayName || firebaseUser.displayName || null,
+            // Use Firestore photoURL if available, otherwise fall back to Firebase Auth
+            photoURL: firestoreData.photoURL || firebaseUser.photoURL || null,
+            // Get role from Firestore, default to 'user'
+            role: firestoreData.role || "user",
           };
 
           setUser(finalUser);
           setRole(finalUser.role);
         } else {
-          // Should not happen in normal flow, but handle it as a regular user.
+          // No Firestore document found, use Firebase Auth data
           const fallbackUser: AuthUser = {
             ...firebaseUser,
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            emailVerified: firebaseUser.emailVerified,
+            displayName: firebaseUser.displayName || null,
+            photoURL: firebaseUser.photoURL || null,
             role: "user",
           };
           setUser(fallbackUser);
