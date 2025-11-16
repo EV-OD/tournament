@@ -9,7 +9,7 @@ import {
   where,
   doc,
   getDoc,
-  setDoc,
+  updateDoc,
   writeBatch,
   addDoc,
   serverTimestamp,
@@ -46,15 +46,10 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const [slots, setSlots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
   const [isSlotUpdateDialogOpen, setIsSlotUpdateDialogOpen] = useState(false);
   const [isGenerateSlotsDialogOpen, setIsGenerateSlotsDialogOpen] =
     useState(false);
-  const [isBookingConfirmDialogOpen, setIsBookingConfirmDialogOpen] =
-    useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
-  const [selectedSlotForBooking, setSelectedSlotForBooking] = useState<
-    any | null
-  >(null);
   const [generatingSlots, setGeneratingSlots] = useState(false);
   const [processingSlotId, setProcessingSlotId] = useState<string | null>(null);
   const [startTime, setStartTime] = useState("09:00");
@@ -122,10 +117,10 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
         const slotDocRef = doc(db, "slots", slotId);
         const slotDoc = await transaction.get(slotDocRef);
         const now = Timestamp.now();
-        const fiveMinutesFromNow = new Timestamp(
-          now.seconds + 300,
+        const tenMinutesFromNow = new Timestamp(
+          now.seconds + 600,
           now.nanoseconds
-        ); // 5 minute hold
+        );
 
         if (slotDoc.exists()) {
           const slotData = slotDoc.data();
@@ -148,7 +143,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
             startTime: hour,
             status: "HELD",
             heldBy: user.uid,
-            holdExpiresAt: fiveMinutesFromNow,
+            holdExpiresAt: tenMinutesFromNow,
           },
           { merge: true }
         );
@@ -163,14 +158,13 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           status: "PENDING_PAYMENT",
           price: pricePerHour,
           createdAt: serverTimestamp(),
-          bookingExpiresAt: fiveMinutesFromNow,
+          bookingExpiresAt: tenMinutesFromNow,
         });
 
         return bookingDocRef.id;
       });
 
-      setIsBookingConfirmDialogOpen(false);
-      toast.success("Slot held for 5 minutes. Redirecting to payment...");
+      toast.success("Slot held for 10 minutes. Redirecting to payment...");
       router.push(`/payment/${bookingId}`);
     } catch (error: any) {
       console.error("Booking transaction failed: ", error);
@@ -179,7 +173,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           ? "This slot was just booked by someone else."
           : "Failed to hold slot. Please try again."
       );
-      setIsBookingConfirmDialogOpen(false);
       fetchData(false); // Re-fetch to get the latest slot status
     } finally {
       setProcessingSlotId(null);
@@ -199,12 +192,11 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       setIsSlotUpdateDialogOpen(true);
     } else {
       if (currentStatus === "AVAILABLE") {
-        setSelectedSlotForBooking({ date, hour, price: pricePerHour });
-        setIsBookingConfirmDialogOpen(true);
+        handleHoldSlot(date, hour);
       } else if (currentStatus === "HELD") {
         toast.warning("This slot is currently on hold.");
       } else {
-        toast.info(`This slot is currently ${slot?.status}.`);
+        toast.info(`This slot is currently ${slot.status}.`);
       }
     }
   };
@@ -253,17 +245,13 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           const hourString = `${hour.toString().padStart(2, "0")}:00`;
           const slotId = getSlotId(groundId, dateString, hourString);
           const newSlotRef = doc(db, "slots", slotId);
-          // We use set with merge to avoid overwriting booked slots unnecessarily
-          batch.set(
-            newSlotRef,
-            {
-              groundId: groundId,
-              date: dateString,
-              startTime: hourString,
-              status: "AVAILABLE",
-            },
-            { merge: true }
-          );
+          batch.set(newSlotRef, {
+            groundId: groundId,
+            date: dateString,
+            startTime: hourString,
+            status: "AVAILABLE",
+            createdAt: serverTimestamp(),
+          });
         }
       });
       batch.update(doc(db, "venues", groundId), { startTime, endTime });
@@ -361,6 +349,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     let isPast = new Date(`${dateString}T${hour}`) < new Date();
     let slotStatus = slot ? slot.status : "AVAILABLE";
 
+    // Check if a hold has expired
     if (
       slotStatus === "HELD" &&
       slot.holdExpiresAt &&
@@ -393,7 +382,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           handleSlotClick(slot, dateString, hour)
         }
       >
-        {isProcessing && !isManager ? (
+        {isProcessing ? (
           <Loader2 className="h-5 w-5 animate-spin" />
         ) : (
           <>
@@ -495,66 +484,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
         </>
       )}
 
-      {/* --- Dialogs --- */}
-      <Dialog
-        open={isBookingConfirmDialogOpen}
-        onOpenChange={setIsBookingConfirmDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Your Slot</DialogTitle>
-            <DialogDescription>
-              You will have 5 minutes to complete the payment once you proceed.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedSlotForBooking && (
-            <div className="py-4 space-y-3">
-              <p>
-                <strong>Date:</strong> {selectedSlotForBooking.date}
-              </p>
-              <p>
-                <strong>Time:</strong> {selectedSlotForBooking.hour} -{" "}
-                {(parseInt(selectedSlotForBooking.hour.split(":")[0]) + 1)
-                  .toString()
-                  .padStart(2, "0")}
-                :00
-              </p>
-              <p>
-                <strong>Price:</strong> Rs. {pricePerHour}
-              </p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsBookingConfirmDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (selectedSlotForBooking) {
-                  handleHoldSlot(
-                    selectedSlotForBooking.date,
-                    selectedSlotForBooking.hour
-                  );
-                }
-              }}
-              disabled={processingSlotId !== null}
-            >
-              {processingSlotId ? (
-                <>
-                  <Loader2 className="animate-spin mr-2" />
-                  Please wait
-                </>
-              ) : (
-                "Go to Payment"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+      {/* Dialogs */}
       <Dialog
         open={isGenerateSlotsDialogOpen}
         onOpenChange={setIsGenerateSlotsDialogOpen}
