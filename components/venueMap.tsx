@@ -19,7 +19,6 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
-  CardFooter,
 } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
@@ -33,6 +32,7 @@ import {
 } from "firebase/firestore";
 import AddGround from "./addGround";
 import { useRouter } from "next/navigation";
+import { Search, MapPin, Navigation, Plus, Loader2 } from "lucide-react";
 
 // Fix for default Leaflet icon path issues with webpack
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -56,30 +56,50 @@ const AddGroundMarker = ({
   return null;
 };
 
+// Helper function to calculate distance between two coordinates
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number => {
+  const R = 6371; // Radius of the Earth in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 const VenueMap = () => {
   const { user, role } = useAuth();
   const router = useRouter();
 
-  // State for all venues to display on the map
   const [allVenues, setAllVenues] = useState<any[]>([]);
-  // State for venues managed by the current user
   const [managedVenues, setManagedVenues] = useState<any[]>([]);
+  const [displayedVenues, setDisplayedVenues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [isAddingMode, setIsAddingMode] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [tempLocation, setTempLocation] = useState<LatLng | null>(null);
   const [newGroundLocation, setNewGroundLocation] = useState<LatLng | null>(
-    null
+    null,
   );
 
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
-    null
+    null,
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [searchedLocation, setSearchedLocation] = useState<
     [number, number] | null
   >(null);
+  const [selectedVenue, setSelectedVenue] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   // Fetches ALL venues for the map markers
@@ -88,13 +108,15 @@ const VenueMap = () => {
       const q = query(
         collection(db, "venues"),
         orderBy("createdAt", "desc"),
-        limit(500)
+        limit(500),
       );
       const snap = await getDocs(q);
       const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
       setAllVenues(list);
+      return list;
     } catch (error) {
       console.error("Error fetching all venues:", error);
+      return [];
     }
   };
 
@@ -109,7 +131,7 @@ const VenueMap = () => {
     try {
       const q = query(
         collection(db, "venues"),
-        where("managedBy", "==", user.uid)
+        where("managedBy", "==", user.uid),
       );
       const querySnapshot = await getDocs(q);
       const venueList = querySnapshot.docs.map((doc) => ({
@@ -124,39 +146,89 @@ const VenueMap = () => {
     }
   };
 
-  // A combined function to refresh both lists, passed to the AddGround form
-  const refreshAllData = () => {
-    fetchAllVenues();
-    fetchManagedVenues();
+  const refreshAllData = async () => {
+    const venues = await fetchAllVenues();
+    await fetchManagedVenues();
+    updateDisplayedVenues(venues, searchQuery, userLocation);
+  };
+
+  const updateDisplayedVenues = (
+    venues: any[],
+    query: string,
+    userLoc: [number, number] | null,
+  ) => {
+    if (query.trim() === "" && userLoc) {
+      // Show top 5 nearest venues when search is empty
+      const venuesWithDistance = venues.map((venue) => ({
+        ...venue,
+        distance: calculateDistance(
+          userLoc[0],
+          userLoc[1],
+          venue.latitude,
+          venue.longitude,
+        ),
+      }));
+      const sorted = venuesWithDistance.sort((a, b) => a.distance - b.distance);
+      setDisplayedVenues(sorted.slice(0, 5));
+    } else if (query.trim() !== "") {
+      // Filter venues based on search query
+      const filtered = venues.filter(
+        (venue) =>
+          venue.name?.toLowerCase().includes(query.toLowerCase()) ||
+          venue.address?.toLowerCase().includes(query.toLowerCase()) ||
+          venue.facilities?.toLowerCase().includes(query.toLowerCase()),
+      );
+      setDisplayedVenues(filtered);
+    } else {
+      // Show all venues if no user location and no search
+      setDisplayedVenues(venues.slice(0, 5));
+    }
   };
 
   useEffect(() => {
-    // Fetch all venues for the map
-    fetchAllVenues();
-    // Fetch venues specific to the manager for the list view
-    fetchManagedVenues();
+    const initializeData = async () => {
+      const venues = await fetchAllVenues();
+      await fetchManagedVenues();
 
-    // Get user's current location to display on the map
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-        setUserLocation([latitude, longitude]);
-        // Don't flyTo here automatically to respect user's map interaction
-      });
-    }
-  }, [user, role]); // Rerun effects when user or role changes
+      // Get user's current location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+          const { latitude, longitude } = position.coords;
+          const loc: [number, number] = [latitude, longitude];
+          setUserLocation(loc);
+          updateDisplayedVenues(venues, "", loc);
+        });
+      } else {
+        updateDisplayedVenues(venues, "", null);
+      }
+    };
+
+    initializeData();
+  }, [user, role]);
+
+  useEffect(() => {
+    updateDisplayedVenues(allVenues, searchQuery, userLocation);
+  }, [searchQuery, allVenues, userLocation]);
 
   const handleSearch = async () => {
-    if (searchQuery.trim() === "") return;
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${searchQuery}`
-    );
-    const data = await response.json();
-    if (data && data.length > 0) {
-      const lat = parseFloat(data[0].lat);
-      const lon = parseFloat(data[0].lon);
-      setSearchedLocation([lat, lon]);
-      mapRef.current?.flyTo([lat, lon], 15);
+    if (searchQuery.trim() === "") {
+      setSearchedLocation(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${searchQuery}`,
+      );
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lon = parseFloat(data[0].lon);
+        setSearchedLocation([lat, lon]);
+        mapRef.current?.flyTo([lat, lon], 15);
+      }
+    } catch (error) {
+      console.error("Error searching location:", error);
     }
   };
 
@@ -170,34 +242,21 @@ const VenueMap = () => {
     }
   };
 
-  const handleMarkerClick = (groundId: string) =>
-    router.push(`/venue/${groundId}`);
+  const handleMarkerClick = (groundId: string) => {
+    setSelectedVenue(groundId);
+  };
+
+  const handleVenueCardClick = (venue: any) => {
+    setSelectedVenue(venue.id);
+    mapRef.current?.flyTo([venue.latitude, venue.longitude], 16);
+  };
+
+  const handleViewDetails = (venueId: string) => {
+    router.push(`/venue/${venueId}`);
+  };
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex w-full max-w-sm items-center space-x-2">
-          <Input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search for a location"
-          />
-          <Button onClick={handleSearch}>Search</Button>
-        </div>
-        {role === "manager" && (
-          <>
-            {!isAddingMode ? (
-              <Button onClick={() => setIsAddingMode(true)}>Add Ground</Button>
-            ) : (
-              <Button onClick={confirmLocation} disabled={!tempLocation}>
-                Confirm Location
-              </Button>
-            )}
-          </>
-        )}
-      </div>
-
+    <div className="flex flex-col h-[calc(100vh-4rem)] w-screen overflow-hidden py-10">
       <AddGround
         newGroundLocation={newGroundLocation}
         isFormOpen={isFormOpen}
@@ -205,91 +264,259 @@ const VenueMap = () => {
         fetchGrounds={refreshAllData}
       />
 
-      <div className="rounded-lg overflow-hidden border mb-8">
-        <MapContainer
-          center={[27.7172, 85.324]}
-          zoom={12}
-          style={{ height: "400px", width: "100%" }}
-          whenReady={(e) => {
-            mapRef.current = e.target;
-          }}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-
-          {/* Marker for the user's current location */}
-          {userLocation && (
-            <Marker position={userLocation}>
-              <Tooltip>You are here</Tooltip>
-            </Marker>
-          )}
-
-          {/* Marker for a searched location */}
-          {searchedLocation && (
-            <Marker position={searchedLocation}>
-              <Tooltip>Search Result</Tooltip>
-            </Marker>
-          )}
-
-          {/* Markers for adding a new ground */}
-          {isAddingMode && (
-            <AddGroundMarker onLocationSelect={handleLocationSelect} />
-          )}
-          {tempLocation && (
-            <Marker position={tempLocation}>
-              <Tooltip>New futsal ground location</Tooltip>
-            </Marker>
-          )}
-
-          {/* Markers for ALL futsal grounds */}
-          {allVenues.map((ground) => (
-            <Marker
-              key={ground.id}
-              position={[ground.latitude, ground.longitude]}
-              eventHandlers={{ click: () => handleMarkerClick(ground.id) }}
-            >
-              <Tooltip>
-                <h3>{ground.name}</h3>
-              </Tooltip>
-            </Marker>
-          ))}
-        </MapContainer>
-      </div>
-
-      {/* This section only renders for managers */}
-      {role === "manager" && (
-        <div>
-          <h2 className="text-2xl font-bold mb-4">My Grounds</h2>
-          {loading && <p>Loading venues...</p>}
-          {!loading && managedVenues.length === 0 && (
-            <p>You have not added any grounds yet.</p>
-          )}
-          {!loading && managedVenues.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {managedVenues.map((venue) => (
-                <Card key={venue.id} className="min-h-[160px]">
-                  <CardHeader>
-                    <CardTitle>{venue.name}</CardTitle>
-                    <CardDescription>{venue.address}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">
-                      {venue.facilities}
-                    </p>
-                  </CardContent>
-                  <CardFooter>
-                    <Link href={`/venue/${venue.id}`}>
-                      <Button>View Details</Button>
-                    </Link>
-                  </CardFooter>
-                </Card>
-              ))}
+      <div className="flex flex-1 gap-4 overflow-hidden">
+        {/* Left Sidebar */}
+        <div className="w-full md:w-96 lg:w-[400px] flex flex-col border-r bg-background overflow-hidden">
+          {/* Search Section */}
+          <div className="p-4 border-b space-y-3 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  placeholder="Search venues or locations..."
+                  className="pl-9"
+                />
+              </div>
+              <Button onClick={handleSearch} size="icon" variant="secondary">
+                <Navigation className="h-4 w-4" />
+              </Button>
             </div>
-          )}
+
+            {role === "manager" && (
+              <div className="flex gap-2">
+                {!isAddingMode ? (
+                  <Button
+                    onClick={() => setIsAddingMode(true)}
+                    className="w-full"
+                    variant="default"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add New Ground
+                  </Button>
+                ) : (
+                  <div className="flex gap-2 w-full">
+                    <Button
+                      onClick={confirmLocation}
+                      disabled={!tempLocation}
+                      className="flex-1"
+                    >
+                      Confirm Location
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setIsAddingMode(false);
+                        setTempLocation(null);
+                      }}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isAddingMode && (
+              <div className="text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+                <MapPin className="h-4 w-4 inline mr-2" />
+                Click on the map to select a location for your new ground
+              </div>
+            )}
+          </div>
+
+          {/* Results Section */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">
+                {searchQuery.trim() === "" ? "Nearby Venues" : "Search Results"}
+              </h2>
+              <span className="text-sm text-muted-foreground">
+                {displayedVenues.length}{" "}
+                {displayedVenues.length === 1 ? "venue" : "venues"}
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : displayedVenues.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <MapPin className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No venues found</p>
+                {searchQuery && (
+                  <p className="text-xs mt-1">Try a different search term</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {displayedVenues.map((venue) => (
+                  <Card
+                    key={venue.id}
+                    className={`cursor-pointer transition-all hover:shadow-md ${
+                      selectedVenue === venue.id
+                        ? "ring-2 ring-primary border-primary"
+                        : ""
+                    }`}
+                    onClick={() => handleVenueCardClick(venue)}
+                  >
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-base leading-tight">
+                            {venue.name}
+                          </CardTitle>
+                          <CardDescription className="text-xs mt-1">
+                            <MapPin className="h-3 w-3 inline mr-1" />
+                            {venue.address}
+                          </CardDescription>
+                        </div>
+                        {venue.distance && (
+                          <div className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-1 rounded">
+                            {venue.distance.toFixed(1)} km
+                          </div>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      {venue.facilities && (
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {venue.facilities}
+                        </p>
+                      )}
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDetails(venue.id);
+                        }}
+                        size="sm"
+                        className="mt-3 w-full"
+                        variant="outline"
+                      >
+                        View Details
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Manager's Grounds Section */}
+            {role === "manager" && managedVenues.length > 0 && (
+              <div className="mt-6 pt-6 border-t">
+                <h2 className="text-lg font-semibold mb-3">
+                  My Managed Grounds
+                </h2>
+                <div className="space-y-3">
+                  {managedVenues.map((venue) => (
+                    <Card
+                      key={venue.id}
+                      className="cursor-pointer hover:shadow-md transition-all"
+                      onClick={() => handleVenueCardClick(venue)}
+                    >
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">
+                          {venue.name}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          <MapPin className="h-3 w-3 inline mr-1" />
+                          {venue.address}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="pb-3">
+                        {venue.facilities && (
+                          <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
+                            {venue.facilities}
+                          </p>
+                        )}
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(venue.id);
+                          }}
+                          size="sm"
+                          className="w-full"
+                        >
+                          Manage Ground
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      )}
+
+        {/* Right Map Section */}
+        <div className="flex-1  relative overflow-hidden grow">
+          <div className="absolute inset-0 rounded-lg overflow-hidden border">
+            <MapContainer
+              center={userLocation || [27.7172, 85.324]}
+              zoom={userLocation ? 14 : 12}
+              style={{ height: "100%", width: "100%" }}
+              whenReady={(e) => {
+                mapRef.current = e.target;
+              }}
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+
+              {userLocation && (
+                <Marker position={userLocation}>
+                  <Tooltip permanent>
+                    <div className="text-center">
+                      <strong>Your Location</strong>
+                    </div>
+                  </Tooltip>
+                </Marker>
+              )}
+
+              {searchedLocation && (
+                <Marker position={searchedLocation}>
+                  <Tooltip>Search Result</Tooltip>
+                </Marker>
+              )}
+
+              {isAddingMode && (
+                <AddGroundMarker onLocationSelect={handleLocationSelect} />
+              )}
+              {tempLocation && (
+                <Marker position={tempLocation}>
+                  <Tooltip permanent>
+                    <div className="text-center">
+                      <strong>New Ground Location</strong>
+                    </div>
+                  </Tooltip>
+                </Marker>
+              )}
+
+              {allVenues.map((ground) => (
+                <Marker
+                  key={ground.id}
+                  position={[ground.latitude, ground.longitude]}
+                  eventHandlers={{ click: () => handleMarkerClick(ground.id) }}
+                >
+                  <Tooltip>
+                    <div className="text-center">
+                      <strong>{ground.name}</strong>
+                      <br />
+                      <span className="text-xs">{ground.address}</span>
+                    </div>
+                  </Tooltip>
+                </Marker>
+              ))}
+            </MapContainer>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

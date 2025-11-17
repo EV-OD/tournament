@@ -16,7 +16,7 @@ export default function ClientLayout({
       {/* Header is a client component and will hide itself on /login */}
       <Header />
       {/* Main app container — provides consistent page padding & centered content */}
-      <main className="container ml-auto pl-4">{children}</main>
+      <main className="container w-screen">{children}</main>
     </AuthProvider>
   );
 }

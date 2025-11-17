@@ -13,14 +13,7 @@ const Home = () => {
   const { role } = useAuth();
 
   return (
-    <main className="container mx-auto p-4">
-      <h1 className="text-4xl font-bold text-center my-8">
-        {role === "manager"
-          ? "My Futsal Dashboard"
-          : "Find and Book a Futsal Ground"}
-      </h1>
-
-      {/* Always render the unified VenueMap for all users */}
+    <main className="container">
       <VenueMap />
     </main>
   );
