@@ -11,18 +11,25 @@ import {
   doc,
   getDoc,
 } from "firebase/firestore";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPin, DollarSign, ChevronRight } from "lucide-react";
 import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 import ManagerPanel from "@/components/ManagerPanel";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 const MyVenuesPage = () => {
   const { user } = useAuth();
-  const [venue, setVenue] = useState<any | null>(null);
-  const [venueId, setVenueId] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const venueIdFromUrl = searchParams.get("id");
+  
+  const [venues, setVenues] = useState<any[]>([]);
+  const [selectedVenue, setSelectedVenue] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
 
-  const fetchVenueDetails = useCallback(async () => {
+  const fetchVenues = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -39,28 +46,40 @@ const MyVenuesPage = () => {
       }
 
       setHasVenueAccess(true);
-      const venueDoc = venueSnapshot.docs[0];
-      const fetchedVenueId = venueDoc.id;
-      setVenueId(fetchedVenueId);
+      const venuesData = venueSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setVenues(venuesData);
 
-      // Fetch the full venue data
-      const venueRef = doc(db, "venues", fetchedVenueId);
-      const venueDocSnap = await getDoc(venueRef);
-      
-      if (venueDocSnap.exists()) {
-        setVenue({ id: fetchedVenueId, ...venueDocSnap.data() });
+      // If there's a venue ID in URL, select that venue
+      if (venueIdFromUrl) {
+        const venueToSelect = venuesData.find((v) => v.id === venueIdFromUrl);
+        if (venueToSelect) {
+          setSelectedVenue(venueToSelect);
+        }
       }
     } catch (error) {
-      console.error("Error fetching venue details:", error);
+      console.error("Error fetching venues:", error);
       setHasVenueAccess(false);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, venueIdFromUrl]);
 
   useEffect(() => {
-    fetchVenueDetails();
-  }, [fetchVenueDetails]);
+    fetchVenues();
+  }, [fetchVenues]);
+
+  const handleVenueSelect = (venue: any) => {
+    setSelectedVenue(venue);
+    router.push(`/manager/venue-settings?id=${venue.id}`);
+  };
+
+  const handleBackToList = () => {
+    setSelectedVenue(null);
+    router.push("/manager/venue-settings");
+  };
 
   if (loading) {
     return (
@@ -74,155 +93,70 @@ const MyVenuesPage = () => {
     return <NoVenueAccess />;
   }
 
-  if (!venue) {
+  // Show venue list if no venue is selected
+  if (!selectedVenue) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <p className="text-gray-600">Loading venue data...</p>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">My Venues</h1>
+          <p className="text-gray-600 mt-1">Select a venue to manage its details, images, location, and availability.</p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {venues.map((venue) => (
+            <Card
+              key={venue.id}
+              className="hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => handleVenueSelect(venue)}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>{venue.name}</span>
+                  <ChevronRight className="h-5 w-5 text-gray-400" />
+                </CardTitle>
+                <CardDescription className="space-y-2 mt-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="h-4 w-4" />
+                    <span>{venue.address || "No address set"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <DollarSign className="h-4 w-4" />
+                    <span>Rs. {venue.pricePerHour || 0} / hour</span>
+                  </div>
+                </CardDescription>
+              </CardHeader>
+              {venue.imageUrls && venue.imageUrls.length > 0 && (
+                <CardContent>
+                  <img
+                    src={venue.imageUrls[0]}
+                    alt={venue.name}
+                    className="w-full h-40 object-cover rounded-md"
+                  />
+                </CardContent>
+              )}
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
 
+  // Show selected venue management panel
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">My Venue</h1>
-        <p className="text-gray-600 mt-1">Manage your venue details, images, location, and availability.</p>
+      <div className="flex items-center gap-2 text-sm text-gray-600">
+        <button
+          onClick={handleBackToList}
+          className="hover:text-green-600 transition-colors"
+        >
+          My Venues
+        </button>
+        <ChevronRight className="h-4 w-4" />
+        <span className="text-gray-900 font-medium">{selectedVenue.name}</span>
       </div>
-      <ManagerPanel venue={venue} />
+      <ManagerPanel venue={selectedVenue} />
     </div>
   );
 };
 
 export default MyVenuesPage;
-
-      if (venueSnapshot.empty) {
-        setHasVenueAccess(false);
-        setLoading(false);
-        return;
-      }
-
-      setHasVenueAccess(true);
-
-      const venueDoc = venueSnapshot.docs[0];
-      setVenueId(venueDoc.id);
-      const venueData = venueDoc.data();
-      setVenue(venueData);
-      setFormData({
-        name: venueData.name || "",
-        address: venueData.address || "",
-        price: venueData.price ? venueData.price.toString() : "",
-      });
-    } catch (err: any) {
-      console.error("Error fetching venue details:", err);
-      toast.error("Failed to load venue details. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user) {
-      fetchVenueDetails();
-    }
-  }, [user, fetchVenueDetails]);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setFormData((prev) => ({ ...prev, [id]: value }));
-  };
-
-  const handleUpdateDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!venueId) return;
-
-    setIsUpdating(true);
-    try {
-      const priceAsNumber = parseFloat(formData.price);
-      if (isNaN(priceAsNumber) || priceAsNumber < 0) {
-        throw new Error("Please enter a valid, non-negative price.");
-      }
-
-      const venueRef = doc(db, "venues", venueId);
-      await updateDoc(venueRef, {
-        name: formData.name,
-        address: formData.address,
-        price: priceAsNumber,
-      });
-
-      toast.success("Venue details updated successfully!");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update details.");
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin" /> Loading settings...
-      </div>
-    );
-  }
-
-  if (hasVenueAccess === false) {
-    return <NoVenueAccess />;
-  }
-
-  return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Venue Settings</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Update Your Venue Details</CardTitle>
-          <CardDescription>
-            Keep your venue information up to date for your customers.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleUpdateDetails} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Venue Name</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="E.g., Downtown Futsal"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                placeholder="E.g., 123 Main St, Anytown"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="price">Price Per Slot (in Rs.)</Label>
-              <Input
-                id="price"
-                type="number"
-                value={formData.price}
-                onChange={handleInputChange}
-                placeholder="E.g., 1500"
-                required
-              />
-            </div>
-            <Button type="submit" disabled={isUpdating}>
-              {isUpdating ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save Changes
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
-
-export default VenueSettingsPage;

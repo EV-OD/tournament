@@ -27,12 +27,15 @@ interface ManagerPanelProps {
 }
 
 const ManagerPanel = ({ venue }: ManagerPanelProps) => {
-  const { id } = useParams();
+  const { id: paramId } = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  
+  // Use venue.id if available (from prop), otherwise use paramId from URL
+  const venueId = venue.id || paramId;
 
   const [formData, setFormData] = useState({
     name: venue.name || "",
@@ -121,7 +124,7 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
 
     try {
       setIsSaving(true);
-      const venueRef = doc(db, "venues", id as string);
+      const venueRef = doc(db, "venues", venueId as string);
       await updateDoc(venueRef, {
         name: formData.name,
         description: formData.description,
@@ -164,12 +167,8 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
   return (
     <ManagerGuard>
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Manage Your Venue</h1>
-            <p className="text-gray-600 mt-1">Update venue details, images, and availability</p>
-          </div>
+        {/* Edit Button */}
+        <div className="flex items-center justify-end">
           {!isEditing && activeTab === "overview" && (
             <Button onClick={() => setIsEditing(true)} size="lg">
               <Edit className="w-4 h-4 mr-2" />
@@ -520,7 +519,7 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <WeeklySlotsGrid groundId={id as string} />
+                <WeeklySlotsGrid groundId={venueId as string} />
               </CardContent>
             </Card>
           </TabsContent>

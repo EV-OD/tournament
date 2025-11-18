@@ -51,7 +51,7 @@ const ManagerLayout = ({ children }: ManagerLayoutProps) => {
     },
     {
       href: "/manager/venue-settings",
-      label: "Venue Settings",
+      label: "My Venue",
       icon: Settings,
     },
   ];
