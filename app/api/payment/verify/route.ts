@@ -9,6 +9,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { ESEWA_VERIFY_URL, ESEWA_SECRET_KEY } from '@/lib/esewa/config';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { bookSlot } from '@/lib/slotService';
 
 interface EsewaVerificationResponse {
   product_code: string;
@@ -87,16 +90,99 @@ export async function POST(request: NextRequest) {
     // Check if payment was completed
     const isVerified = verificationData.status === 'COMPLETE';
 
-    return NextResponse.json({
-      verified: isVerified,
-      status: verificationData.status,
-      transactionUuid: verificationData.transaction_uuid,
-      refId: verificationData.ref_id,
-      totalAmount: verificationData.total_amount,
-      productCode: verificationData.product_code,
-    });
+    if (!isVerified) {
+      console.log('⚠️ Payment not complete, status:', verificationData.status);
+      return NextResponse.json({
+        verified: false,
+        status: verificationData.status,
+        transactionUuid: verificationData.transaction_uuid,
+        refId: verificationData.ref_id,
+        totalAmount: verificationData.total_amount,
+        productCode: verificationData.product_code,
+      });
+    }
+
+    // Payment is verified, now update the booking in Firestore
+    console.log('💾 Updating booking in database...');
+    
+    try {
+      // Get booking details
+      const bookingRef = doc(db, 'bookings', transactionUuid);
+      const bookingSnap = await getDoc(bookingRef);
+
+      if (!bookingSnap.exists()) {
+        console.error('❌ Booking not found:', transactionUuid);
+        return NextResponse.json({
+          verified: true,
+          status: verificationData.status,
+          error: 'Booking not found in database',
+          transactionUuid: verificationData.transaction_uuid,
+          refId: verificationData.ref_id,
+        }, { status: 404 });
+      }
+
+      const booking = bookingSnap.data();
+      
+      // Check if already confirmed to prevent duplicate processing
+      if (booking.status === 'confirmed') {
+        console.log('ℹ️ Booking already confirmed');
+        return NextResponse.json({
+          verified: true,
+          status: 'COMPLETE',
+          alreadyConfirmed: true,
+          transactionUuid: verificationData.transaction_uuid,
+          refId: verificationData.ref_id,
+          totalAmount: verificationData.total_amount,
+          productCode: verificationData.product_code,
+        });
+      }
+
+      console.log('📄 Booking data:', booking);
+
+      // Convert hold to confirmed booking in venueSlots
+      console.log('🔄 Converting hold to confirmed booking...');
+      await bookSlot(booking.venueId, booking.date, booking.startTime, {
+        bookingId: transactionUuid,
+        bookingType: 'website',
+        status: 'confirmed',
+        userId: booking.userId,
+      });
+
+      // Update booking document
+      console.log('✅ Updating booking document...');
+      await updateDoc(bookingRef, {
+        status: 'confirmed',
+        paymentTimestamp: serverTimestamp(),
+        esewaTransactionCode: verificationData.ref_id,
+        esewaTransactionUuid: verificationData.transaction_uuid,
+        esewaStatus: verificationData.status,
+        esewaAmount: verificationData.total_amount,
+        verifiedAt: serverTimestamp(),
+      });
+
+      console.log('🎉 Payment verification and booking confirmation complete!');
+
+      return NextResponse.json({
+        verified: true,
+        status: verificationData.status,
+        transactionUuid: verificationData.transaction_uuid,
+        refId: verificationData.ref_id,
+        totalAmount: verificationData.total_amount,
+        productCode: verificationData.product_code,
+        bookingConfirmed: true,
+      });
+    } catch (dbError) {
+      console.error('❌ Database update error:', dbError);
+      return NextResponse.json({
+        verified: true,
+        status: verificationData.status,
+        error: 'Payment verified but booking update failed',
+        transactionUuid: verificationData.transaction_uuid,
+        refId: verificationData.ref_id,
+      }, { status: 500 });
+    }
   } catch (error) {
-    console.error('Error verifying payment:', error);
+    console.error('❌ Error verifying payment:', error);
     return NextResponse.json(
       { 
         error: 'Failed to verify payment',

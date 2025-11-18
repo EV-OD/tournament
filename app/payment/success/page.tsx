@@ -9,9 +9,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { doc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { bookSlot } from "@/lib/slotService";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,44 +107,22 @@ export default function PaymentSuccessPage() {
         return;
       }
 
-      console.log("📝 Getting booking document...");
-      // Get booking details
-      const bookingRef = doc(db, "bookings", transactionUuid);
-      const bookingSnap = await getDoc(bookingRef);
-
-      if (!bookingSnap.exists()) {
-        console.error("❌ Booking not found:", transactionUuid);
+      // Check if booking was confirmed by the server
+      if (verificationData.bookingConfirmed || verificationData.alreadyConfirmed) {
+        console.log("✅ Booking confirmed by server");
+        setStatus("success");
+        setMessage("Payment successful! Your booking has been confirmed.");
+      } else if (verificationData.error) {
+        console.error("⚠️ Server error:", verificationData.error);
         setStatus("error");
-        setMessage("Booking not found. Please contact support.");
-        return;
+        setMessage(
+          "Payment verified but booking confirmation failed. Please contact support with your transaction ID."
+        );
+      } else {
+        console.log("🎉 Payment verification complete!");
+        setStatus("success");
+        setMessage("Payment successful! Your booking has been confirmed.");
       }
-
-      const booking = bookingSnap.data();
-      console.log("📄 Booking data:", booking);
-
-      console.log("🔄 Converting hold to confirmed booking...");
-      // Convert hold to confirmed booking in venueSlots
-      await bookSlot(booking.venueId, booking.date, booking.startTime, {
-        bookingId: transactionUuid,
-        bookingType: "website",
-        status: "confirmed",
-        userId: booking.userId,
-      });
-
-      console.log("💾 Updating booking document...");
-      // Update booking document
-      await updateDoc(bookingRef, {
-        status: "confirmed",
-        paymentTimestamp: serverTimestamp(),
-        esewaTransactionCode: transactionCode,
-        esewaTransactionUuid: transactionUuid,
-        esewaStatus: esewaStatus,
-        esewaAmount: totalAmount,
-      });
-
-      console.log("🎉 Payment confirmed successfully!");
-      setStatus("success");
-      setMessage("Payment successful! Your booking has been confirmed.");
     } catch (error) {
       console.error("❌ Error verifying payment:", error);
       setStatus("error");
