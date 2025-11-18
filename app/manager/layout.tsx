@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart, Settings } from "lucide-react";
+import { LayoutDashboard, Calendar, Settings, Menu } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 interface ManagerLayoutProps {
   children: React.ReactNode;
@@ -11,63 +14,110 @@ interface ManagerLayoutProps {
 
 const ManagerLayout = ({ children }: ManagerLayoutProps) => {
   const pathname = usePathname();
-  const { user, loading } = useAuth(); // Assuming useAuth provides manager status
+  const { user, loading } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // In a real app, you'd protect this route and fetch manager-specific data
   if (loading) {
-    return <div>Loading...</div>; // Or a proper skeleton loader
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+      </div>
+    );
   }
 
   if (!user) {
-    // This should be handled by middleware in a real app
-    return <div>Access Denied. You must be logged in as a manager.</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            Access Denied
+          </h2>
+          <p className="text-gray-600">You must be logged in as a manager.</p>
+        </div>
+      </div>
+    );
   }
 
+  const menuItems = [
+    {
+      href: "/manager/dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      href: "/manager/bookings",
+      label: "Bookings",
+      icon: Calendar,
+    },
+    {
+      href: "/manager/venue-settings",
+      label: "Venue Settings",
+      icon: Settings,
+    },
+  ];
+
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-64 bg-gray-800 text-white pt-5">
-        <nav>
-          <ul>
-            <li>
-              <Link
-                href="/manager/dashboard"
-                className={`flex items-center p-2 py-3 rounded hover:bg-gray-700 ${
-                  pathname === "/manager/dashboard" ? "bg-gray-900" : ""
-                }`}
-              >
-                <Home className="mr-3" />
-                Dashboard
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/manager/bookings"
-                className={`flex items-center p-2 rounded hover:bg-gray-700 ${
-                  pathname.startsWith("/manager/bookings") ? "bg-gray-900" : ""
-                }`}
-              >
-                <BarChart className="mr-3" />
-                Bookings
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/manager/venue-settings"
-                className={`flex items-center p-2 rounded hover:bg-gray-700 ${
-                  pathname.startsWith("/manager/venue-settings")
-                    ? "bg-gray-900"
-                    : ""
-                }`}
-              >
-                <Settings className="mr-3" />
-                Venue Settings
-              </Link>
-            </li>
-            {/* Add more links as new manager pages are created */}
-          </ul>
-        </nav>
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white border-r border-gray-200",
+          sidebarOpen ? "w-64" : "w-16"
+        )}
+      >
+        <div className="flex flex-col h-full">
+          {/* Sidebar Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            {sidebarOpen && (
+              <h2 className="text-lg font-semibold text-gray-800">
+                Manager Panel
+              </h2>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="ml-auto"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-3 space-y-1">
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+              
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors",
+                    isActive
+                      ? "bg-green-50 text-green-600 font-medium"
+                      : "text-gray-700 hover:bg-gray-100"
+                  )}
+                >
+                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  {sidebarOpen && <span>{item.label}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
       </aside>
-      <main className="flex-1 p-6 bg-gray-100">{children}</main>
+
+      {/* Main Content */}
+      <main
+        className={cn(
+          "flex-1 transition-all duration-300 ease-in-out",
+          sidebarOpen ? "ml-64" : "ml-16"
+        )}
+      >
+        <div className="p-6">{children}</div>
+      </main>
     </div>
   );
 };

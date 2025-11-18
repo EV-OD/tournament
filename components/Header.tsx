@@ -28,25 +28,27 @@ const Header = () => {
         <Link href="/" className="text-gray-600 hover:text-green-600">
           Home
         </Link>
-        <Link href="/venues" className="text-gray-600 hover:text-green-600">
-          Venues
-        </Link>
-        {user && (
-          <Link
-            href="/user/bookings"
-            className="text-gray-600 hover:text-green-600"
-          >
-            My Bookings
-          </Link>
-        )}
-        {/* Add Manager Dashboard link if user is a manager */}
-        {role === "manager" && (
+        {role === "manager" ? (
           <Link
             href="/manager/dashboard"
             className="text-gray-600 hover:text-green-600"
           >
-            Manager Dashboard
+            Manage Venues
           </Link>
+        ) : (
+          <>
+            <Link href="/venues" className="text-gray-600 hover:text-green-600">
+              Venues
+            </Link>
+            {user && (
+              <Link
+                href="/user/bookings"
+                className="text-gray-600 hover:text-green-600"
+              >
+                My Bookings
+              </Link>
+            )}
+          </>
         )}
       </nav>
       <div>

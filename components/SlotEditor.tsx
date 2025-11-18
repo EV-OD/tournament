@@ -12,10 +12,12 @@ import {
   doc,
   orderBy,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Card,
@@ -23,8 +25,15 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  CardFooter,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type SlotEditorProps = {
   venueId: string;
@@ -45,6 +54,13 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
     date: "",
     startTime: "",
     endTime: "",
+  });
+  const [reserveDialogOpen, setReserveDialogOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [reservationDetails, setReservationDetails] = useState({
+    customerName: "",
+    customerPhone: "",
+    notes: "",
   });
 
   const fetchSlots = async () => {
@@ -134,6 +150,61 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
     }
   };
 
+  const handleOpenReserveDialog = (slot: Slot) => {
+    if (slot.status === "booked") {
+      toast.error("This slot is already booked.");
+      return;
+    }
+    setSelectedSlot(slot);
+    setReservationDetails({ customerName: "", customerPhone: "", notes: "" });
+    setReserveDialogOpen(true);
+  };
+
+  const handleReserveSlot = async () => {
+    if (!selectedSlot) return;
+    
+    if (!reservationDetails.customerName.trim()) {
+      toast.error("Customer name is required.");
+      return;
+    }
+
+    if (!reservationDetails.customerPhone.trim()) {
+      toast.error("Customer phone number is required.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Create a physical booking record
+      const bookingRef = await addDoc(collection(db, "bookings"), {
+        venueId,
+        slotId: selectedSlot.id,
+        timeSlot: `${selectedSlot.date} ${selectedSlot.startTime} - ${selectedSlot.endTime}`,
+        customerName: reservationDetails.customerName,
+        customerPhone: reservationDetails.customerPhone,
+        notes: reservationDetails.notes,
+        bookingType: "physical",
+        status: "confirmed",
+        createdAt: serverTimestamp(),
+      });
+
+      // Update slot status to booked
+      await updateDoc(doc(db, "slots", selectedSlot.id), {
+        status: "booked",
+        bookingId: bookingRef.id,
+      });
+
+      toast.success("Slot reserved successfully for physical booking!");
+      setReserveDialogOpen(false);
+      fetchSlots();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to reserve slot.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -189,12 +260,12 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
             {slots.map((slot) => (
               <div
                 key={slot.id}
-                className="flex justify-between items-center p-2 border rounded-lg"
+                className="flex justify-between items-center p-3 border rounded-lg"
               >
-                <div>
-                  <p>{`${slot.date} ${slot.startTime} - ${slot.endTime}`}</p>
+                <div className="flex-1">
+                  <p className="font-medium">{`${slot.date} ${slot.startTime} - ${slot.endTime}`}</p>
                   <p
-                    className={`text-sm ${
+                    className={`text-sm font-semibold ${
                       slot.status === "booked"
                         ? "text-red-500"
                         : "text-green-500"
@@ -203,19 +274,112 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
                     {slot.status}
                   </p>
                 </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleDeleteSlot(slot.id, slot.status)}
-                  disabled={loading || slot.status === "booked"}
-                >
-                  Delete
-                </Button>
+                <div className="flex gap-2">
+                  {slot.status === "available" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenReserveDialog(slot)}
+                      disabled={loading}
+                    >
+                      Reserve
+                    </Button>
+                  )}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDeleteSlot(slot.id, slot.status)}
+                    disabled={loading || slot.status === "booked"}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </CardContent>
+
+      {/* Reserve Slot Dialog */}
+      <Dialog open={reserveDialogOpen} onOpenChange={setReserveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reserve Slot (Physical Booking)</DialogTitle>
+            <DialogDescription>
+              Enter customer details for this physical booking. No payment processing required.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedSlot && (
+            <div className="bg-blue-50 p-3 rounded-lg mb-4">
+              <p className="text-sm font-semibold text-blue-900">
+                {`${selectedSlot.date} ${selectedSlot.startTime} - ${selectedSlot.endTime}`}
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="customerName">Customer Name *</Label>
+              <Input
+                id="customerName"
+                placeholder="Enter customer name"
+                value={reservationDetails.customerName}
+                onChange={(e) =>
+                  setReservationDetails((prev) => ({
+                    ...prev,
+                    customerName: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="customerPhone">Customer Phone *</Label>
+              <Input
+                id="customerPhone"
+                placeholder="Enter phone number"
+                value={reservationDetails.customerPhone}
+                onChange={(e) =>
+                  setReservationDetails((prev) => ({
+                    ...prev,
+                    customerPhone: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Textarea
+                id="notes"
+                placeholder="Additional notes about the booking..."
+                value={reservationDetails.notes}
+                onChange={(e) =>
+                  setReservationDetails((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setReserveDialogOpen(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleReserveSlot} disabled={loading}>
+              {loading ? "Reserving..." : "Confirm Reservation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

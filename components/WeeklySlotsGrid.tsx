@@ -27,9 +27,11 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Store } from "lucide-react";
 
 interface WeeklySlotsGridProps {
   groundId: string;
@@ -44,6 +46,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const { user } = useAuth();
   const router = useRouter();
   const [slots, setSlots] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSlotUpdateDialogOpen, setIsSlotUpdateDialogOpen] = useState(false);
@@ -51,10 +54,16 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     useState(false);
   const [isBookingConfirmDialogOpen, setIsBookingConfirmDialogOpen] =
     useState(false);
+  const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
   const [selectedSlotForBooking, setSelectedSlotForBooking] = useState<
     any | null
   >(null);
+  const [reservationDetails, setReservationDetails] = useState({
+    customerName: "",
+    customerPhone: "",
+    notes: "",
+  });
   const [generatingSlots, setGeneratingSlots] = useState(false);
   const [processingSlotId, setProcessingSlotId] = useState<string | null>(null);
   const [startTime, setStartTime] = useState("09:00");
@@ -76,7 +85,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           return;
         }
         const groundData = groundDoc.data();
-        setIsManager(user && groundData.managedBy === user.uid);
+        setIsManager(!!(user && groundData.managedBy === user.uid));
         setPricePerHour(groundData.pricePerHour || 0);
         if (groundData.startTime && groundData.endTime) {
           setStartTime(groundData.startTime);
@@ -94,7 +103,27 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           where("date", "in", dates)
         );
         const slotsSnapshot = await getDocs(slotsQuery);
-        setSlots(slotsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const slotsData = slotsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        
+        // Fetch bookings for these slots
+        const slotIds = slotsData.map((s) => s.id);
+        let bookingsData: any[] = [];
+        if (slotIds.length > 0) {
+          // Firestore 'in' query limit is 10, so we need to batch
+          const batchSize = 10;
+          for (let i = 0; i < slotIds.length; i += batchSize) {
+            const batch = slotIds.slice(i, i + batchSize);
+            const bookingsQuery = query(
+              collection(db, "bookings"),
+              where("slotId", "in", batch)
+            );
+            const bookingsSnapshot = await getDocs(bookingsQuery);
+            bookingsData.push(...bookingsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+          }
+        }
+        
+        setSlots(slotsData);
+        setBookings(bookingsData);
       } catch (err) {
         console.error("Error fetching data:", err);
         setError("An error occurred while fetching data.");
@@ -194,9 +223,34 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       return;
     }
     const currentStatus = slot ? slot.status : "AVAILABLE";
+    
+    // Find booking for this slot
+    const slotId = getSlotId(groundId, date, hour);
+    const booking = bookings.find((b) => b.slotId === slotId);
+    const isPhysicalBooking = booking?.bookingType === "physical";
+    
     if (isManager) {
-      setSelectedSlot(slot || { date, startTime: hour, groundId });
-      setIsSlotUpdateDialogOpen(true);
+      // Manager can unbook physical bookings or manage available slots
+      if ((currentStatus === "BOOKED" || currentStatus === "RESERVED")) {
+        // Check if slot has a bookingId (which means it's a booking)
+        if (slot?.bookingId) {
+          // If we found the booking in our array, check if it's physical
+          // If not found, allow clicking anyway (we'll check in the dialog)
+          if (!booking || isPhysicalBooking) {
+            setSelectedSlot({ ...slot, date, startTime: hour, groundId, bookingId: slot.bookingId });
+            setIsSlotUpdateDialogOpen(true);
+          } else {
+            toast.info("Website bookings cannot be unbooked by managers. Contact admin.");
+          }
+        } else {
+          toast.info(`This slot is ${currentStatus.toLowerCase()} but has no booking record.`);
+        }
+      } else if (currentStatus === "AVAILABLE") {
+        setSelectedSlot(slot || { date, startTime: hour, groundId });
+        setIsSlotUpdateDialogOpen(true);
+      } else {
+        toast.info(`This slot is ${currentStatus.toLowerCase()} and cannot be modified.`);
+      }
     } else {
       if (currentStatus === "AVAILABLE") {
         setSelectedSlotForBooking({ date, hour, price: pricePerHour });
@@ -213,6 +267,14 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     if (!selectedSlot) return;
     const { date, startTime } = selectedSlot;
     const slotId = getSlotId(groundId, date, startTime);
+    
+    if (status === "RESERVED") {
+      // Open reservation dialog for physical booking
+      setIsReserveDialogOpen(true);
+      setIsSlotUpdateDialogOpen(false);
+      return;
+    }
+    
     try {
       const slotRef = doc(db, "slots", slotId);
       await setDoc(
@@ -232,6 +294,63 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     } catch (error) {
       console.error("Error updating slot:", error);
       toast.error("Failed to update slot");
+    }
+  };
+
+  const handleReserveSlot = async () => {
+    if (!selectedSlot) return;
+    
+    if (!reservationDetails.customerName.trim()) {
+      toast.error("Customer name is required.");
+      return;
+    }
+
+    if (!reservationDetails.customerPhone.trim()) {
+      toast.error("Customer phone number is required.");
+      return;
+    }
+
+    const { date, startTime } = selectedSlot;
+    const slotId = getSlotId(groundId, date, startTime);
+
+    try {
+      // Create a physical booking record
+      const bookingRef = await addDoc(collection(db, "bookings"), {
+        venueId: groundId,
+        slotId: slotId,
+        date: date,
+        startTime: startTime,
+        timeSlot: `${date} ${startTime} - ${(parseInt(startTime.split(":")[0]) + 1).toString().padStart(2, "0")}:00`,
+        customerName: reservationDetails.customerName,
+        customerPhone: reservationDetails.customerPhone,
+        notes: reservationDetails.notes,
+        bookingType: "physical",
+        status: "confirmed",
+        createdAt: serverTimestamp(),
+      });
+
+      // Update slot status to RESERVED
+      const slotRef = doc(db, "slots", slotId);
+      await setDoc(
+        slotRef,
+        {
+          groundId,
+          date,
+          startTime,
+          status: "RESERVED",
+          bookingId: bookingRef.id,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      toast.success("Slot reserved successfully for physical booking!");
+      setIsReserveDialogOpen(false);
+      setReservationDetails({ customerName: "", customerPhone: "", notes: "" });
+      fetchData(false);
+    } catch (error) {
+      console.error("Error reserving slot:", error);
+      toast.error("Failed to reserve slot.");
     }
   };
 
@@ -279,12 +398,13 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  const getStatusInfo = (status: string | null) => {
+  const getStatusInfo = (status: string | null, bookingType?: string | null) => {
     if (!status)
       return {
         text: "Avail.",
         color: "bg-green-200",
         hover: "hover:bg-green-300",
+        isPhysical: false,
       };
     switch (status.toUpperCase()) {
       case "AVAILABLE":
@@ -292,33 +412,42 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           text: "Avail.",
           color: "bg-green-200",
           hover: "hover:bg-green-300",
+          isPhysical: false,
         };
       case "BOOKED":
+        // Website bookings (null or 'website') - yellow, cannot unbook
+        // Physical bookings - purple with icon, can unbook
+        const isPhysical = bookingType === "physical";
         return {
           text: "Booked",
-          color: "bg-yellow-400",
-          hover: "cursor-not-allowed",
+          color: isPhysical ? "bg-purple-400" : "bg-yellow-400",
+          hover: isPhysical ? "hover:bg-purple-500" : "cursor-not-allowed",
+          isPhysical,
         };
       case "HELD":
         return {
           text: "Held",
           color: "bg-blue-400",
           hover: "cursor-not-allowed",
+          isPhysical: false,
         };
       case "RESERVED":
+        // Physical reservations - purple with icon, can unbook
         return {
           text: "Reserv.",
-          color: "bg-orange-400",
-          hover: "hover:bg-orange-500",
+          color: "bg-purple-400",
+          hover: "hover:bg-purple-500",
+          isPhysical: true,
         };
       case "BLOCKED":
         return {
           text: "Blocked",
           color: "bg-red-400",
           hover: "hover:bg-red-500",
+          isPhysical: false,
         };
       default:
-        return { text: "", color: "bg-gray-100", hover: "" };
+        return { text: "", color: "bg-gray-100", hover: "", isPhysical: false };
     }
   };
 
@@ -369,9 +498,21 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       slotStatus = "AVAILABLE";
     }
 
+    // Find booking for this slot to get booking type
+    const booking = bookings.find((b) => b.slotId === slotId);
+    const bookingType = booking?.bookingType;
+
     const status = isPast ? null : slotStatus;
-    const statusInfo = getStatusInfo(status);
-    const canClick = !isPast && !isManager && status === "AVAILABLE";
+    const statusInfo = getStatusInfo(status, bookingType);
+    
+    // Allow clicking if:
+    // - Manager: can click AVAILABLE slots or physical bookings
+    // - User: can click AVAILABLE slots
+    const canClick = !isPast && (
+      (isManager && (status === "AVAILABLE" || statusInfo.isPhysical)) ||
+      (!isManager && status === "AVAILABLE")
+    );
+    
     const cellClass = isPast
       ? "bg-gray-200 text-gray-500 cursor-not-allowed"
       : `${statusInfo.color} ${
@@ -388,7 +529,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
           isMobile ? "h-16 text-xs p-1" : "h-full text-sm"
         }`}
         onClick={() =>
-          (canClick || isManager) &&
+          canClick &&
           !isProcessing &&
           handleSlotClick(slot, dateString, hour)
         }
@@ -402,7 +543,8 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
                 parseInt(hour.split(":")[0]) + 1
               ).padStart(2, "0")}`}</div>
             )}
-            <div className="font-bold text-[11px] uppercase">
+            <div className="font-bold text-[11px] uppercase flex items-center gap-1">
+              {statusInfo.isPhysical && <Store className="h-3 w-3" />}
               {isPast ? "Past" : statusInfo.text}
             </div>
           </>
@@ -604,23 +746,146 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
             </p>
           )}
           <DialogFooter className="sm:justify-start">
+            {selectedSlot?.bookingId ? (
+              <Button
+                onClick={async () => {
+                  try {
+                    const slotId = getSlotId(groundId, selectedSlot.date, selectedSlot.startTime);
+                    const slotRef = doc(db, "slots", slotId);
+                    const bookingRef = doc(db, "bookings", selectedSlot.bookingId);
+                    
+                    // Verify it's a physical booking before deleting
+                    await runTransaction(db, async (transaction) => {
+                      const bookingDoc = await transaction.get(bookingRef);
+                      
+                      if (!bookingDoc.exists()) {
+                        throw new Error("Booking not found");
+                      }
+                      
+                      const bookingData = bookingDoc.data();
+                      if (bookingData.bookingType !== "physical") {
+                        throw new Error("Only physical bookings can be unbooked by managers");
+                      }
+                      
+                      transaction.delete(bookingRef);
+                      transaction.update(slotRef, {
+                        status: "AVAILABLE",
+                        bookingId: null,
+                        updatedAt: serverTimestamp(),
+                      });
+                    });
+                    
+                    toast.success("Physical booking removed successfully");
+                    setIsSlotUpdateDialogOpen(false);
+                    fetchData(false);
+                  } catch (error: any) {
+                    console.error("Error removing booking:", error);
+                    toast.error(error.message || "Failed to remove booking");
+                  }
+                }}
+                variant="destructive"
+              >
+                Unbook (Remove Physical Booking)
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => handleUpdateSlotStatus("AVAILABLE")}
+                  variant="outline"
+                >
+                  Available
+                </Button>
+                <Button
+                  onClick={() => handleUpdateSlotStatus("RESERVED")}
+                  variant="outline"
+                >
+                  Reserved
+                </Button>
+                <Button
+                  onClick={() => handleUpdateSlotStatus("BLOCKED")}
+                  variant="destructive"
+                >
+                  Block
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isReserveDialogOpen}
+        onOpenChange={setIsReserveDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reserve Slot - Physical Booking</DialogTitle>
+            <DialogDescription>
+              Enter customer details for physical reservation
+            </DialogDescription>
+          </DialogHeader>
+          {selectedSlot && (
+            <p className="py-2 text-sm text-muted-foreground">
+              Slot: <strong>{selectedSlot.date}</strong> at{" "}
+              <strong>{selectedSlot.startTime}</strong>
+            </p>
+          )}
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="customer-name">Customer Name *</Label>
+              <Input
+                id="customer-name"
+                placeholder="Enter customer name"
+                value={reservationDetails.customerName}
+                onChange={(e) =>
+                  setReservationDetails({
+                    ...reservationDetails,
+                    customerName: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="customer-phone">Customer Phone *</Label>
+              <Input
+                id="customer-phone"
+                placeholder="Enter phone number"
+                value={reservationDetails.customerPhone}
+                onChange={(e) =>
+                  setReservationDetails({
+                    ...reservationDetails,
+                    customerPhone: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Textarea
+                id="notes"
+                placeholder="Add any additional notes..."
+                value={reservationDetails.notes}
+                onChange={(e) =>
+                  setReservationDetails({
+                    ...reservationDetails,
+                    notes: e.target.value,
+                  })
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
             <Button
-              onClick={() => handleUpdateSlotStatus("AVAILABLE")}
               variant="outline"
+              onClick={() => {
+                setIsReserveDialogOpen(false);
+                setReservationDetails({ customerName: "", customerPhone: "", notes: "" });
+              }}
             >
-              Available
+              Cancel
             </Button>
-            <Button
-              onClick={() => handleUpdateSlotStatus("RESERVED")}
-              variant="outline"
-            >
-              Reserved
-            </Button>
-            <Button
-              onClick={() => handleUpdateSlotStatus("BLOCKED")}
-              variant="destructive"
-            >
-              Block
+            <Button onClick={handleReserveSlot}>
+              Confirm Reservation
             </Button>
           </DialogFooter>
         </DialogContent>
