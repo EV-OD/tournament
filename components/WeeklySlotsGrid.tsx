@@ -1,22 +1,35 @@
+/**
+ * WeeklySlotsGrid - Refactored to use slotService
+ * 
+ * This component displays a weekly view of slots using the new
+ * venue-based slot architecture. Slots are reconstructed on-demand
+ * from venue configuration + exceptions.
+ */
+
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { db } from "@/lib/firebase";
 import {
-  collection,
-  getDocs,
-  query,
-  where,
   doc,
   getDoc,
-  setDoc,
-  writeBatch,
   addDoc,
+  collection,
   serverTimestamp,
-  runTransaction,
-  Timestamp,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import {
+  reconstructSlots,
+  bookSlot,
+  unbookSlot,
+  holdSlot,
+  releaseHold,
+  reserveSlot,
+  unreserveSlot,
+  blockSlot,
+  unblockSlot,
+  type ReconstructedSlot,
+} from "@/lib/slotService";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,855 +50,617 @@ interface WeeklySlotsGridProps {
   groundId: string;
 }
 
-// --- Helper Function ---
-const getSlotId = (groundId: string, date: string, startTime: string) => {
-  return `${groundId}_${date}_${startTime.replace(":", "")}`;
-};
+interface PhysicalBookingData {
+  customerName: string;
+  customerPhone: string;
+  notes: string;
+}
 
 const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const { user } = useAuth();
   const router = useRouter();
-  const [slots, setSlots] = useState<any[]>([]);
-  const [bookings, setBookings] = useState<any[]>([]);
+  
+  const [slots, setSlots] = useState<ReconstructedSlot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isSlotUpdateDialogOpen, setIsSlotUpdateDialogOpen] = useState(false);
-  const [isGenerateSlotsDialogOpen, setIsGenerateSlotsDialogOpen] =
-    useState(false);
-  const [isBookingConfirmDialogOpen, setIsBookingConfirmDialogOpen] =
-    useState(false);
-  const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
-  const [selectedSlotForBooking, setSelectedSlotForBooking] = useState<
-    any | null
-  >(null);
-  const [reservationDetails, setReservationDetails] = useState({
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(
+    getWeekStart(new Date())
+  );
+  
+  // Dialog states
+  const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<ReconstructedSlot | null>(null);
+  
+  // Physical booking form
+  const [physicalBookingData, setPhysicalBookingData] = useState<PhysicalBookingData>({
     customerName: "",
     customerPhone: "",
     notes: "",
   });
-  const [generatingSlots, setGeneratingSlots] = useState(false);
-  const [processingSlotId, setProcessingSlotId] = useState<string | null>(null);
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("21:00");
-  const [pricePerHour, setPricePerHour] = useState(0);
+  
   const [isManager, setIsManager] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const fetchData = useCallback(
-    async (isInitialLoad = true) => {
-      if (!groundId) return;
-      if (isInitialLoad) setLoading(true);
-      setError(null);
-      try {
-        const groundDocRef = doc(db, "venues", groundId);
-        const groundDoc = await getDoc(groundDocRef);
-        if (!groundDoc.exists()) {
-          setError("This venue does not exist.");
-          setLoading(false);
-          return;
-        }
-        const groundData = groundDoc.data();
-        setIsManager(!!(user && groundData.managedBy === user.uid));
-        setPricePerHour(groundData.pricePerHour || 0);
-        if (groundData.startTime && groundData.endTime) {
-          setStartTime(groundData.startTime);
-          setEndTime(groundData.endTime);
-        }
-        const today = new Date();
-        const dates = [...Array(7)].map((_, i) => {
-          const d = new Date();
-          d.setDate(today.getDate() + i);
-          return d.toISOString().split("T")[0];
-        });
-        const slotsQuery = query(
-          collection(db, "slots"),
-          where("groundId", "==", groundId),
-          where("date", "in", dates)
-        );
-        const slotsSnapshot = await getDocs(slotsQuery);
-        const slotsData = slotsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        
-        // Fetch bookings for these slots
-        const slotIds = slotsData.map((s) => s.id);
-        let bookingsData: any[] = [];
-        if (slotIds.length > 0) {
-          // Firestore 'in' query limit is 10, so we need to batch
-          const batchSize = 10;
-          for (let i = 0; i < slotIds.length; i += batchSize) {
-            const batch = slotIds.slice(i, i + batchSize);
-            const bookingsQuery = query(
-              collection(db, "bookings"),
-              where("slotId", "in", batch)
-            );
-            const bookingsSnapshot = await getDocs(bookingsQuery);
-            bookingsData.push(...bookingsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-          }
-        }
-        
-        setSlots(slotsData);
-        setBookings(bookingsData);
-      } catch (err) {
-        console.error("Error fetching data:", err);
-        setError("An error occurred while fetching data.");
-      } finally {
-        if (isInitialLoad) setLoading(false);
-      }
-    },
-    [groundId, user]
-  );
+  // ============================================================================
+  // Helper Functions
+  // ============================================================================
+
+  function getWeekStart(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day;
+    return new Date(d.setDate(diff));
+  }
+
+  function getWeekEnd(weekStart: Date): Date {
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    return end;
+  }
+
+  function formatDate(date: Date): string {
+    return date.toISOString().split("T")[0];
+  }
+
+  function getDayLabel(date: Date): string {
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  // ============================================================================
+  // Check Manager Access
+  // ============================================================================
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleHoldSlot = async (date: string, hour: string) => {
-    if (!user) {
-      toast.error("Please log in to book a slot.");
-      return;
-    }
-    const slotId = getSlotId(groundId, date, hour);
-    setProcessingSlotId(slotId);
-
-    try {
-      const bookingId = await runTransaction(db, async (transaction) => {
-        const slotDocRef = doc(db, "slots", slotId);
-        const slotDoc = await transaction.get(slotDocRef);
-        const now = Timestamp.now();
-        const fiveMinutesFromNow = new Timestamp(
-          now.seconds + 300,
-          now.nanoseconds
-        ); // 5 minute hold
-
-        if (slotDoc.exists()) {
-          const slotData = slotDoc.data();
-          const isHeld = slotData.status === "HELD";
-          const isHoldExpired =
-            isHeld &&
-            slotData.holdExpiresAt &&
-            slotData.holdExpiresAt.toMillis() < now.toMillis();
-
-          if (slotData.status !== "AVAILABLE" && !isHoldExpired) {
-            throw new Error("Slot is not available.");
-          }
-        }
-
-        transaction.set(
-          slotDocRef,
-          {
-            groundId: groundId,
-            date: date,
-            startTime: hour,
-            status: "HELD",
-            heldBy: user.uid,
-            holdExpiresAt: fiveMinutesFromNow,
-          },
-          { merge: true }
-        );
-
-        const bookingDocRef = doc(collection(db, "bookings"));
-        transaction.set(bookingDocRef, {
-          userId: user.uid,
-          venueId: groundId,
-          slotId: slotId,
-          date: date,
-          startTime: hour,
-          status: "PENDING_PAYMENT",
-          price: pricePerHour,
-          createdAt: serverTimestamp(),
-          bookingExpiresAt: fiveMinutesFromNow,
-        });
-
-        return bookingDocRef.id;
-      });
-
-      setIsBookingConfirmDialogOpen(false);
-      toast.success("Slot held for 5 minutes. Redirecting to payment...");
-      router.push(`/payment/${bookingId}`);
-    } catch (error: any) {
-      console.error("Booking transaction failed: ", error);
-      toast.error(
-        error.message === "Slot is not available."
-          ? "This slot was just booked by someone else."
-          : "Failed to hold slot. Please try again."
-      );
-      setIsBookingConfirmDialogOpen(false);
-      fetchData(false); // Re-fetch to get the latest slot status
-    } finally {
-      setProcessingSlotId(null);
-    }
-  };
-
-  const handleSlotClick = (slot: any, date: string, hour: string) => {
-    const now = new Date();
-    const slotDateTime = new Date(`${date}T${hour}`);
-    if (slotDateTime < now) {
-      toast.info("This slot is in the past.");
-      return;
-    }
-    const currentStatus = slot ? slot.status : "AVAILABLE";
-    
-    // Find booking for this slot
-    const slotId = getSlotId(groundId, date, hour);
-    const booking = bookings.find((b) => b.slotId === slotId);
-    const isPhysicalBooking = booking?.bookingType === "physical";
-    
-    if (isManager) {
-      // Manager can unbook physical bookings or manage available slots
-      if ((currentStatus === "BOOKED" || currentStatus === "RESERVED")) {
-        // Check if slot has a bookingId (which means it's a booking)
-        if (slot?.bookingId) {
-          // If we found the booking in our array, check if it's physical
-          // If not found, allow clicking anyway (we'll check in the dialog)
-          if (!booking || isPhysicalBooking) {
-            setSelectedSlot({ ...slot, date, startTime: hour, groundId, bookingId: slot.bookingId });
-            setIsSlotUpdateDialogOpen(true);
-          } else {
-            toast.info("Website bookings cannot be unbooked by managers. Contact admin.");
-          }
-        } else {
-          toast.info(`This slot is ${currentStatus.toLowerCase()} but has no booking record.`);
-        }
-      } else if (currentStatus === "AVAILABLE") {
-        setSelectedSlot(slot || { date, startTime: hour, groundId });
-        setIsSlotUpdateDialogOpen(true);
-      } else {
-        toast.info(`This slot is ${currentStatus.toLowerCase()} and cannot be modified.`);
+    async function checkManagerAccess() {
+      if (!user) {
+        setIsManager(false);
+        return;
       }
-    } else {
-      if (currentStatus === "AVAILABLE") {
-        setSelectedSlotForBooking({ date, hour, price: pricePerHour });
-        setIsBookingConfirmDialogOpen(true);
-      } else if (currentStatus === "HELD") {
-        toast.warning("This slot is currently on hold.");
-      } else {
-        toast.info(`This slot is currently ${slot?.status}.`);
+
+      try {
+        const venueDoc = await getDoc(doc(db, "grounds", groundId));
+        if (venueDoc.exists()) {
+          const venueData = venueDoc.data();
+          const userIsManager = venueData.managerId === user.uid;
+          setIsManager(userIsManager);
+        }
+      } catch (error) {
+        console.error("Error checking manager access:", error);
       }
     }
-  };
 
-  const handleUpdateSlotStatus = async (status: string) => {
-    if (!selectedSlot) return;
-    const { date, startTime } = selectedSlot;
-    const slotId = getSlotId(groundId, date, startTime);
-    
-    if (status === "RESERVED") {
-      // Open reservation dialog for physical booking
-      setIsReserveDialogOpen(true);
-      setIsSlotUpdateDialogOpen(false);
-      return;
-    }
-    
+    checkManagerAccess();
+  }, [user, groundId]);
+
+  // ============================================================================
+  // Load Slots
+  // ============================================================================
+
+  const loadSlots = useCallback(async () => {
+    setLoading(true);
     try {
-      const slotRef = doc(db, "slots", slotId);
-      await setDoc(
-        slotRef,
-        {
-          groundId,
-          date,
-          startTime,
-          status: status,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
+      const weekEnd = getWeekEnd(currentWeekStart);
+      
+      const reconstructedSlots = await reconstructSlots(
+        groundId,
+        currentWeekStart,
+        weekEnd
       );
-      toast.success(`Slot status updated to ${status}`);
-      setIsSlotUpdateDialogOpen(false);
-      fetchData(false);
+      
+      setSlots(reconstructedSlots);
     } catch (error) {
-      console.error("Error updating slot:", error);
-      toast.error("Failed to update slot");
+      console.error("Error loading slots:", error);
+      toast.error("Failed to load slots");
+    } finally {
+      setLoading(false);
+    }
+  }, [groundId, currentWeekStart]);
+
+  useEffect(() => {
+    loadSlots();
+  }, [loadSlots]);
+
+  // ============================================================================
+  // Week Navigation
+  // ============================================================================
+
+  const handlePreviousWeek = () => {
+    const newWeekStart = new Date(currentWeekStart);
+    newWeekStart.setDate(newWeekStart.getDate() - 7);
+    setCurrentWeekStart(newWeekStart);
+  };
+
+  const handleNextWeek = () => {
+    const newWeekStart = new Date(currentWeekStart);
+    newWeekStart.setDate(newWeekStart.getDate() + 7);
+    setCurrentWeekStart(newWeekStart);
+  };
+
+  // ============================================================================
+  // Slot Interaction Handlers
+  // ============================================================================
+
+  const handleSlotClick = (slot: ReconstructedSlot) => {
+    // User booking
+    if (!isManager && slot.status === "AVAILABLE") {
+      setSelectedSlot(slot);
+      setBookingDialogOpen(true);
+      return;
+    }
+
+    // Manager unbook physical bookings
+    if (isManager && slot.status === "BOOKED" && slot.bookingType === "physical") {
+      handleUnbookPhysical(slot);
+      return;
+    }
+
+    // Manager reserve slot
+    if (isManager && slot.status === "AVAILABLE") {
+      handlePhysicalReservation(slot);
+      return;
     }
   };
 
-  const handleReserveSlot = async () => {
-    if (!selectedSlot) return;
-    
-    if (!reservationDetails.customerName.trim()) {
-      toast.error("Customer name is required.");
-      return;
+  const canClickSlot = (slot: ReconstructedSlot): boolean => {
+    // Users can book available slots
+    if (!isManager && slot.status === "AVAILABLE") {
+      return true;
     }
 
-    if (!reservationDetails.customerPhone.trim()) {
-      toast.error("Customer phone number is required.");
-      return;
+    // Managers can unbook physical bookings
+    if (isManager && slot.status === "BOOKED" && slot.bookingType === "physical") {
+      return true;
     }
 
-    const { date, startTime } = selectedSlot;
-    const slotId = getSlotId(groundId, date, startTime);
+    // Managers can reserve available slots
+    if (isManager && slot.status === "AVAILABLE") {
+      return true;
+    }
+
+    return false;
+  };
+
+  // ============================================================================
+  // User Booking Flow
+  // ============================================================================
+
+  const handleUserBooking = async () => {
+    if (!selectedSlot || !user) return;
+
+    setIsProcessing(true);
 
     try {
-      // Create a physical booking record
-      const bookingRef = await addDoc(collection(db, "bookings"), {
+      // 1. Hold the slot
+      const bookingId = `booking_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      await holdSlot(
+        groundId,
+        selectedSlot.date,
+        selectedSlot.startTime,
+        user.uid,
+        bookingId,
+        5 // 5 minutes hold
+      );
+
+      // 2. Create booking document
+      const bookingData = {
         venueId: groundId,
-        slotId: slotId,
-        date: date,
-        startTime: startTime,
-        timeSlot: `${date} ${startTime} - ${(parseInt(startTime.split(":")[0]) + 1).toString().padStart(2, "0")}:00`,
-        customerName: reservationDetails.customerName,
-        customerPhone: reservationDetails.customerPhone,
-        notes: reservationDetails.notes,
+        userId: user.uid,
+        date: selectedSlot.date,
+        startTime: selectedSlot.startTime,
+        endTime: selectedSlot.endTime,
+        status: "pending_payment",
+        bookingType: "website",
+        createdAt: serverTimestamp(),
+        amount: 1000, // TODO: Get from venue pricing
+      };
+
+      const bookingRef = await addDoc(collection(db, "bookings"), bookingData);
+
+      // 3. Redirect to payment
+      router.push(`/payment/${bookingRef.id}`);
+
+      toast.success("Slot reserved! Complete payment within 5 minutes.");
+    } catch (error: any) {
+      console.error("Error booking slot:", error);
+      toast.error(error.message || "Failed to book slot");
+    } finally {
+      setIsProcessing(false);
+      setBookingDialogOpen(false);
+    }
+  };
+
+  // ============================================================================
+  // Manager Physical Reservation Flow
+  // ============================================================================
+
+  const handlePhysicalReservation = (slot: ReconstructedSlot) => {
+    setSelectedSlot(slot);
+    setPhysicalBookingData({
+      customerName: "",
+      customerPhone: "",
+      notes: "",
+    });
+    setBookingDialogOpen(true);
+  };
+
+  const handlePhysicalBookingSubmit = async () => {
+    if (!selectedSlot || !user) return;
+
+    if (!physicalBookingData.customerName.trim()) {
+      toast.error("Customer name is required");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const bookingId = `physical_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create booking in venueSlots
+      await bookSlot(
+        groundId,
+        selectedSlot.date,
+        selectedSlot.startTime,
+        {
+          bookingId,
+          bookingType: "physical",
+          status: "confirmed",
+          customerName: physicalBookingData.customerName,
+          customerPhone: physicalBookingData.customerPhone,
+          notes: physicalBookingData.notes,
+          userId: user.uid,
+        }
+      );
+
+      // Create booking document for records
+      await addDoc(collection(db, "bookings"), {
+        venueId: groundId,
+        userId: user.uid,
+        date: selectedSlot.date,
+        startTime: selectedSlot.startTime,
+        endTime: selectedSlot.endTime,
         bookingType: "physical",
         status: "confirmed",
+        customerName: physicalBookingData.customerName,
+        customerPhone: physicalBookingData.customerPhone,
+        notes: physicalBookingData.notes,
         createdAt: serverTimestamp(),
+        amount: 0, // Physical bookings are managed directly
       });
 
-      // Update slot status to RESERVED
-      const slotRef = doc(db, "slots", slotId);
-      await setDoc(
-        slotRef,
-        {
-          groundId,
-          date,
-          startTime,
-          status: "RESERVED",
-          bookingId: bookingRef.id,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      toast.success("Slot reserved successfully for physical booking!");
-      setIsReserveDialogOpen(false);
-      setReservationDetails({ customerName: "", customerPhone: "", notes: "" });
-      fetchData(false);
-    } catch (error) {
-      console.error("Error reserving slot:", error);
-      toast.error("Failed to reserve slot.");
-    }
-  };
-
-  const handleGenerateSlots = async () => {
-    if (!groundId) return;
-    setGeneratingSlots(true);
-    const batch = writeBatch(db);
-    try {
-      const dates = [...Array(7)].map(
-        (_, i) =>
-          new Date(new Date().setDate(new Date().getDate() + i))
-            .toISOString()
-            .split("T")[0]
-      );
-      const startHour = parseInt(startTime.split(":")[0], 10);
-      const endHour = parseInt(endTime.split(":")[0], 10);
-      dates.forEach((dateString) => {
-        for (let hour = startHour; hour < endHour; hour++) {
-          const hourString = `${hour.toString().padStart(2, "0")}:00`;
-          const slotId = getSlotId(groundId, dateString, hourString);
-          const newSlotRef = doc(db, "slots", slotId);
-          // We use set with merge to avoid overwriting booked slots unnecessarily
-          batch.set(
-            newSlotRef,
-            {
-              groundId: groundId,
-              date: dateString,
-              startTime: hourString,
-              status: "AVAILABLE",
-            },
-            { merge: true }
-          );
-        }
-      });
-      batch.update(doc(db, "venues", groundId), { startTime, endTime });
-      await batch.commit();
-      toast.success("Weekly slots generated successfully!");
-      setIsGenerateSlotsDialogOpen(false);
-      fetchData(false);
-    } catch (err) {
-      console.error("Failed to generate slots", err);
-      toast.error("An error occurred during slot generation.");
+      toast.success("Physical booking created successfully!");
+      await loadSlots();
+    } catch (error: any) {
+      console.error("Error creating physical booking:", error);
+      toast.error(error.message || "Failed to create booking");
     } finally {
-      setGeneratingSlots(false);
+      setIsProcessing(false);
+      setBookingDialogOpen(false);
     }
   };
 
-  const getStatusInfo = (status: string | null, bookingType?: string | null) => {
-    if (!status)
-      return {
-        text: "Avail.",
-        color: "bg-green-200",
-        hover: "hover:bg-green-300",
-        isPhysical: false,
-      };
-    switch (status.toUpperCase()) {
+  // ============================================================================
+  // Manager Unbook Physical
+  // ============================================================================
+
+  const handleUnbookPhysical = async (slot: ReconstructedSlot) => {
+    if (!isManager || slot.status !== "BOOKED" || slot.bookingType !== "physical") {
+      return;
+    }
+
+    if (!confirm(`Unbook slot for ${slot.customerName}?`)) {
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      await unbookSlot(groundId, slot.date, slot.startTime);
+      toast.success("Booking removed successfully");
+      await loadSlots();
+    } catch (error: any) {
+      console.error("Error unbooking slot:", error);
+      toast.error(error.message || "Failed to remove booking");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ============================================================================
+  // Slot Styling
+  // ============================================================================
+
+  const getSlotClassName = (slot: ReconstructedSlot): string => {
+    const baseClasses = "p-2 text-center text-sm rounded border transition-all";
+    
+    const clickable = canClickSlot(slot);
+    const hoverClasses = clickable
+      ? "cursor-pointer hover:shadow-md hover:scale-105"
+      : "cursor-default";
+
+    switch (slot.status) {
       case "AVAILABLE":
-        return {
-          text: "Avail.",
-          color: "bg-green-200",
-          hover: "hover:bg-green-300",
-          isPhysical: false,
-        };
+        return `${baseClasses} ${hoverClasses} bg-green-100 border-green-300 text-green-800`;
+      
       case "BOOKED":
-        // Website bookings (null or 'website') - yellow, cannot unbook
-        // Physical bookings - purple with icon, can unbook
-        const isPhysical = bookingType === "physical";
-        return {
-          text: "Booked",
-          color: isPhysical ? "bg-purple-400" : "bg-yellow-400",
-          hover: isPhysical ? "hover:bg-purple-500" : "cursor-not-allowed",
-          isPhysical,
-        };
-      case "HELD":
-        return {
-          text: "Held",
-          color: "bg-blue-400",
-          hover: "cursor-not-allowed",
-          isPhysical: false,
-        };
-      case "RESERVED":
-        // Physical reservations - purple with icon, can unbook
-        return {
-          text: "Reserv.",
-          color: "bg-purple-400",
-          hover: "hover:bg-purple-500",
-          isPhysical: true,
-        };
-      case "BLOCKED":
-        return {
-          text: "Blocked",
-          color: "bg-red-400",
-          hover: "hover:bg-red-500",
-          isPhysical: false,
-        };
-      default:
-        return { text: "", color: "bg-gray-100", hover: "", isPhysical: false };
-    }
-  };
-
-  const weekDates = [...Array(7)].map(
-    (_, i) => new Date(new Date().setDate(new Date().getDate() + i))
-  );
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const gridHours = Array.from(
-    {
-      length: Math.max(
-        0,
-        parseInt(endTime.split(":")[0]) - parseInt(startTime.split(":")[0])
-      ),
-    },
-    (_, i) =>
-      `${(parseInt(startTime.split(":")[0]) + i)
-        .toString()
-        .padStart(2, "0")}:00`
-  );
-
-  if (loading)
-    return (
-      <div className="p-4 flex justify-center items-center">
-        <Loader2 className="animate-spin mr-2" />
-        Loading slots...
-      </div>
-    );
-  if (error)
-    return (
-      <div className="p-4 text-red-500 bg-red-100 border border-red-200 rounded-md">
-        {error}
-      </div>
-    );
-
-  const renderSlot = (date: Date, hour: string, isMobile: boolean = false) => {
-    const dateString = date.toISOString().split("T")[0];
-    const slotId = getSlotId(groundId, dateString, hour);
-    const slot = slots.find((s) => s.id === slotId);
-
-    let isPast = new Date(`${dateString}T${hour}`) < new Date();
-    let slotStatus = slot ? slot.status : "AVAILABLE";
-
-    if (
-      slotStatus === "HELD" &&
-      slot.holdExpiresAt &&
-      slot.holdExpiresAt.toMillis() < Date.now()
-    ) {
-      slotStatus = "AVAILABLE";
-    }
-
-    // Find booking for this slot to get booking type
-    const booking = bookings.find((b) => b.slotId === slotId);
-    const bookingType = booking?.bookingType;
-
-    const status = isPast ? null : slotStatus;
-    const statusInfo = getStatusInfo(status, bookingType);
-    
-    // Allow clicking if:
-    // - Manager: can click AVAILABLE slots or physical bookings
-    // - User: can click AVAILABLE slots
-    const canClick = !isPast && (
-      (isManager && (status === "AVAILABLE" || statusInfo.isPhysical)) ||
-      (!isManager && status === "AVAILABLE")
-    );
-    
-    const cellClass = isPast
-      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-      : `${statusInfo.color} ${
-          canClick ? statusInfo.hover : "cursor-not-allowed"
-        }`;
-    const isProcessing = processingSlotId === slotId;
-
-    return (
-      <div
-        key={slotId}
-        className={`rounded text-center font-semibold transition-colors duration-150 relative ${
-          canClick ? "cursor-pointer" : ""
-        } ${cellClass} flex flex-col justify-center items-center ${
-          isMobile ? "h-16 text-xs p-1" : "h-full text-sm"
-        }`}
-        onClick={() =>
-          canClick &&
-          !isProcessing &&
-          handleSlotClick(slot, dateString, hour)
+        if (slot.bookingType === "physical") {
+          return `${baseClasses} ${hoverClasses} bg-purple-100 border-purple-300 text-purple-800`;
         }
-      >
-        {isProcessing && !isManager ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
+        return `${baseClasses} bg-yellow-100 border-yellow-300 text-yellow-800`;
+      
+      case "BLOCKED":
+        return `${baseClasses} bg-red-100 border-red-300 text-red-800`;
+      
+      case "HELD":
+        return `${baseClasses} bg-blue-100 border-blue-300 text-blue-800`;
+      
+      case "RESERVED":
+        return `${baseClasses} bg-gray-100 border-gray-300 text-gray-800`;
+      
+      default:
+        return baseClasses;
+    }
+  };
+
+  const getSlotContent = (slot: ReconstructedSlot): React.ReactNode => {
+    switch (slot.status) {
+      case "AVAILABLE":
+        return (
           <>
-            {isMobile && (
-              <div className="text-xs">{`${hour.split(":")[0]}-${String(
-                parseInt(hour.split(":")[0]) + 1
-              ).padStart(2, "0")}`}</div>
-            )}
-            <div className="font-bold text-[11px] uppercase flex items-center gap-1">
-              {statusInfo.isPhysical && <Store className="h-3 w-3" />}
-              {isPast ? "Past" : statusInfo.text}
-            </div>
+            <div className="font-medium">{slot.startTime}</div>
+            <div className="text-xs">Available</div>
           </>
-        )}
+        );
+      
+      case "BOOKED":
+        return (
+          <>
+            <div className="font-medium flex items-center justify-center gap-1">
+              {slot.bookingType === "physical" && <Store className="w-3 h-3" />}
+              {slot.startTime}
+            </div>
+            <div className="text-xs truncate">
+              {slot.customerName || "Booked"}
+            </div>
+            {slot.customerPhone && (
+              <div className="text-xs truncate">{slot.customerPhone}</div>
+            )}
+          </>
+        );
+      
+      case "BLOCKED":
+        return (
+          <>
+            <div className="font-medium">{slot.startTime}</div>
+            <div className="text-xs">Blocked</div>
+            {slot.reason && <div className="text-xs truncate">{slot.reason}</div>}
+          </>
+        );
+      
+      case "HELD":
+        return (
+          <>
+            <div className="font-medium">{slot.startTime}</div>
+            <div className="text-xs">Held</div>
+          </>
+        );
+      
+      case "RESERVED":
+        return (
+          <>
+            <div className="font-medium">{slot.startTime}</div>
+            <div className="text-xs">Reserved</div>
+            {slot.note && <div className="text-xs truncate">{slot.note}</div>}
+          </>
+        );
+      
+      default:
+        return slot.startTime;
+    }
+  };
+
+  // ============================================================================
+  // Render
+  // ============================================================================
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
-  };
+  }
+
+  // Group slots by date
+  const slotsByDate = new Map<string, ReconstructedSlot[]>();
+  slots.forEach((slot) => {
+    if (!slotsByDate.has(slot.date)) {
+      slotsByDate.set(slot.date, []);
+    }
+    slotsByDate.get(slot.date)!.push(slot);
+  });
+
+  // Generate week dates
+  const weekDates: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + i);
+    weekDates.push(date);
+  }
 
   return (
-    <div className="w-full">
-      {isManager && (
-        <Button
-          onClick={() => setIsGenerateSlotsDialogOpen(true)}
-          className="mb-4"
-        >
-          {slots.length > 0 ? "Re-Generate Slots" : "Generate Weekly Slots"}
+    <div className="space-y-4">
+      {/* Week Navigation */}
+      <div className="flex items-center justify-between">
+        <Button onClick={handlePreviousWeek} variant="outline">
+          Previous Week
         </Button>
-      )}
-
-      {slots.length === 0 && !isManager && !loading && (
-        <div className="p-6 text-center bg-gray-50 rounded-lg">
-          <h3 className="text-lg font-semibold text-gray-700">
-            No Slots Available
-          </h3>
-          <p className="text-muted-foreground mt-1">
-            The venue manager has not made any time slots available for booking
-            yet. Please check back later.
-          </p>
+        
+        <div className="text-center">
+          <div className="font-semibold text-lg">
+            {currentWeekStart.toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}{" "}
+            -{" "}
+            {getWeekEnd(currentWeekStart).toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </div>
         </div>
-      )}
+        
+        <Button onClick={handleNextWeek} variant="outline">
+          Next Week
+        </Button>
+      </div>
 
-      {(slots.length > 0 || isManager) && (
-        <>
-          {/* Mobile View */}
-          <div className="sm:hidden">
-            {weekDates.map((date) => (
-              <div key={date.toISOString()} className="mb-4">
-                <h3 className="font-bold text-lg mb-2">
-                  {days[date.getDay()]}{" "}
-                  <span className="text-sm text-muted-foreground">
-                    ({date.getDate()})
-                  </span>
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {gridHours.map((hour) => renderSlot(date, hour, true))}
-                </div>
-              </div>
-            ))}
+      {/* Legend */}
+      <div className="flex gap-4 text-xs flex-wrap">
+        <div className="flex items-center gap-1">
+          <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
+          <span>Available</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded"></div>
+          <span>Booked (Website)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded flex items-center justify-center">
+            <Store className="w-2 h-2 text-purple-800" />
           </div>
+          <span>Booked (Physical)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
+          <span>Blocked</span>
+        </div>
+      </div>
 
-          {/* Desktop View */}
-          <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg isolate">
-            <div
-              className="grid text-center text-sm"
-              style={{ gridTemplateColumns: "120px repeat(7, 90px)" }}
-            >
-              <div className="font-bold py-3 px-2 sticky left-0 bg-gray-100 z-20 border-b border-r">
-                Time
+      {/* Slots Grid */}
+      <div className="grid grid-cols-7 gap-2">
+        {weekDates.map((date) => {
+          const dateString = formatDate(date);
+          const dateSlots = slotsByDate.get(dateString) || [];
+
+          return (
+            <div key={dateString} className="space-y-2">
+              <div className="font-semibold text-center text-sm p-2 bg-muted rounded">
+                {getDayLabel(date)}
               </div>
-              {weekDates.map((date) => (
-                <div
-                  key={date.toISOString()}
-                  className="font-bold py-2 px-1 border-b"
-                >
-                  <div>{days[date.getDay()]}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {date.getDate()}
+              
+              <div className="space-y-1">
+                {dateSlots.length === 0 ? (
+                  <div className="text-center text-xs text-muted-foreground p-4">
+                    No slots
                   </div>
-                </div>
-              ))}
-              {gridHours.map((hour) => (
-                <React.Fragment key={hour}>
-                  <div className="font-semibold h-14 whitespace-nowrap text-xs flex items-center justify-center sticky left-0 bg-white z-10 border-b border-t border-r">{`${hour} - ${(
-                    parseInt(hour.split(":")[0]) + 1
-                  )
-                    .toString()
-                    .padStart(2, "0")}:00`}</div>
-                  {weekDates.map((date) => (
+                ) : (
+                  dateSlots.map((slot, idx) => (
                     <div
-                      key={date.toISOString()}
-                      className="border-b border-t p-1 h-14"
+                      key={`${slot.date}_${slot.startTime}`}
+                      className={getSlotClassName(slot)}
+                      onClick={() => canClickSlot(slot) && handleSlotClick(slot)}
                     >
-                      {renderSlot(date, hour)}
+                      {getSlotContent(slot)}
                     </div>
-                  ))}
-                </React.Fragment>
-              ))}
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          );
+        })}
+      </div>
 
-      {/* --- Dialogs --- */}
-      <Dialog
-        open={isBookingConfirmDialogOpen}
-        onOpenChange={setIsBookingConfirmDialogOpen}
-      >
+      {/* Booking Dialog */}
+      <Dialog open={bookingDialogOpen} onOpenChange={setBookingDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Your Slot</DialogTitle>
+            <DialogTitle>
+              {isManager ? "Create Physical Booking" : "Book Slot"}
+            </DialogTitle>
             <DialogDescription>
-              You will have 5 minutes to complete the payment once you proceed.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedSlotForBooking && (
-            <div className="py-4 space-y-3">
-              <p>
-                <strong>Date:</strong> {selectedSlotForBooking.date}
-              </p>
-              <p>
-                <strong>Time:</strong> {selectedSlotForBooking.hour} -{" "}
-                {(parseInt(selectedSlotForBooking.hour.split(":")[0]) + 1)
-                  .toString()
-                  .padStart(2, "0")}
-                :00
-              </p>
-              <p>
-                <strong>Price:</strong> Rs. {pricePerHour}
-              </p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsBookingConfirmDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (selectedSlotForBooking) {
-                  handleHoldSlot(
-                    selectedSlotForBooking.date,
-                    selectedSlotForBooking.hour
-                  );
-                }
-              }}
-              disabled={processingSlotId !== null}
-            >
-              {processingSlotId ? (
+              {selectedSlot && (
                 <>
-                  <Loader2 className="animate-spin mr-2" />
-                  Please wait
+                  {formatDate(new Date(selectedSlot.date))} at {selectedSlot.startTime}
                 </>
-              ) : (
-                "Go to Payment"
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={isGenerateSlotsDialogOpen}
-        onOpenChange={setIsGenerateSlotsDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate Weekly Slots</DialogTitle>
-            <DialogDescription>
-              Define the operating hours. This will create 'Available' slots for
-              the next 7 days and overwrite any existing slots for that period.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <Input
-              id="start-time"
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-            />
-            <Input
-              id="end-time"
-              type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button onClick={handleGenerateSlots} disabled={generatingSlots}>
-              {generatingSlots ? "Generating..." : "Generate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog
-        open={isSlotUpdateDialogOpen}
-        onOpenChange={setIsSlotUpdateDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update Slot Status (Manager)</DialogTitle>
-          </DialogHeader>
-          {selectedSlot && (
-            <p className="py-4">
-              Update slot for <strong>{selectedSlot.date}</strong> at{" "}
-              <strong>{selectedSlot.startTime}</strong>
-            </p>
-          )}
-          <DialogFooter className="sm:justify-start">
-            {selectedSlot?.bookingId ? (
-              <Button
-                onClick={async () => {
-                  try {
-                    const slotId = getSlotId(groundId, selectedSlot.date, selectedSlot.startTime);
-                    const slotRef = doc(db, "slots", slotId);
-                    const bookingRef = doc(db, "bookings", selectedSlot.bookingId);
-                    
-                    // Verify it's a physical booking before deleting
-                    await runTransaction(db, async (transaction) => {
-                      const bookingDoc = await transaction.get(bookingRef);
-                      
-                      if (!bookingDoc.exists()) {
-                        throw new Error("Booking not found");
-                      }
-                      
-                      const bookingData = bookingDoc.data();
-                      if (bookingData.bookingType !== "physical") {
-                        throw new Error("Only physical bookings can be unbooked by managers");
-                      }
-                      
-                      transaction.delete(bookingRef);
-                      transaction.update(slotRef, {
-                        status: "AVAILABLE",
-                        bookingId: null,
-                        updatedAt: serverTimestamp(),
-                      });
-                    });
-                    
-                    toast.success("Physical booking removed successfully");
-                    setIsSlotUpdateDialogOpen(false);
-                    fetchData(false);
-                  } catch (error: any) {
-                    console.error("Error removing booking:", error);
-                    toast.error(error.message || "Failed to remove booking");
+          {isManager ? (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="customerName">Customer Name *</Label>
+                <Input
+                  id="customerName"
+                  value={physicalBookingData.customerName}
+                  onChange={(e) =>
+                    setPhysicalBookingData({
+                      ...physicalBookingData,
+                      customerName: e.target.value,
+                    })
                   }
-                }}
-                variant="destructive"
-              >
-                Unbook (Remove Physical Booking)
-              </Button>
-            ) : (
-              <>
-                <Button
-                  onClick={() => handleUpdateSlotStatus("AVAILABLE")}
-                  variant="outline"
-                >
-                  Available
-                </Button>
-                <Button
-                  onClick={() => handleUpdateSlotStatus("RESERVED")}
-                  variant="outline"
-                >
-                  Reserved
-                </Button>
-                <Button
-                  onClick={() => handleUpdateSlotStatus("BLOCKED")}
-                  variant="destructive"
-                >
-                  Block
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  placeholder="Enter customer name"
+                />
+              </div>
 
-      <Dialog
-        open={isReserveDialogOpen}
-        onOpenChange={setIsReserveDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reserve Slot - Physical Booking</DialogTitle>
-            <DialogDescription>
-              Enter customer details for physical reservation
-            </DialogDescription>
-          </DialogHeader>
-          {selectedSlot && (
-            <p className="py-2 text-sm text-muted-foreground">
-              Slot: <strong>{selectedSlot.date}</strong> at{" "}
-              <strong>{selectedSlot.startTime}</strong>
-            </p>
+              <div>
+                <Label htmlFor="customerPhone">Customer Phone</Label>
+                <Input
+                  id="customerPhone"
+                  value={physicalBookingData.customerPhone}
+                  onChange={(e) =>
+                    setPhysicalBookingData({
+                      ...physicalBookingData,
+                      customerPhone: e.target.value,
+                    })
+                  }
+                  placeholder="Enter customer phone"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={physicalBookingData.notes}
+                  onChange={(e) =>
+                    setPhysicalBookingData({
+                      ...physicalBookingData,
+                      notes: e.target.value,
+                    })
+                  }
+                  placeholder="Additional notes"
+                  rows={3}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="py-4">
+              <p>Click "Confirm" to proceed to payment.</p>
+            </div>
           )}
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="customer-name">Customer Name *</Label>
-              <Input
-                id="customer-name"
-                placeholder="Enter customer name"
-                value={reservationDetails.customerName}
-                onChange={(e) =>
-                  setReservationDetails({
-                    ...reservationDetails,
-                    customerName: e.target.value,
-                  })
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="customer-phone">Customer Phone *</Label>
-              <Input
-                id="customer-phone"
-                placeholder="Enter phone number"
-                value={reservationDetails.customerPhone}
-                onChange={(e) =>
-                  setReservationDetails({
-                    ...reservationDetails,
-                    customerPhone: e.target.value,
-                  })
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Add any additional notes..."
-                value={reservationDetails.notes}
-                onChange={(e) =>
-                  setReservationDetails({
-                    ...reservationDetails,
-                    notes: e.target.value,
-                  })
-                }
-              />
-            </div>
-          </div>
+
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setIsReserveDialogOpen(false);
-                setReservationDetails({ customerName: "", customerPhone: "", notes: "" });
-              }}
+              onClick={() => setBookingDialogOpen(false)}
+              disabled={isProcessing}
             >
               Cancel
             </Button>
-            <Button onClick={handleReserveSlot}>
-              Confirm Reservation
+            <Button
+              onClick={isManager ? handlePhysicalBookingSubmit : handleUserBooking}
+              disabled={isProcessing}
+            >
+              {isProcessing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Confirm
             </Button>
           </DialogFooter>
         </DialogContent>

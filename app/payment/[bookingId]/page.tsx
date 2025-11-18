@@ -5,13 +5,13 @@ import { useRouter, useParams } from "next/navigation";
 import {
   doc,
   getDoc,
-  runTransaction,
+  updateDoc,
   serverTimestamp,
   Timestamp,
-  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
+import { bookSlot, releaseHold } from "@/lib/slotService";
 import {
   Card,
   CardContent,
@@ -39,26 +39,19 @@ const PaymentPage = () => {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Move handleBookingExpiration outside of useEffect and remove booking dependency
+  // Handle booking expiration by releasing hold
   const handleBookingExpiration = useCallback(
-    async (bookingId: string, slotId: string) => {
+    async (bookingId: string, venueId: string, date: string, startTime: string) => {
       try {
-        const batch = writeBatch(db);
         const bookingRef = doc(db, "bookings", bookingId);
-        const slotRef = doc(db, "slots", slotId);
 
-        batch.update(bookingRef, {
+        await updateDoc(bookingRef, {
           status: "EXPIRED",
           expiredAt: serverTimestamp(),
         });
-        batch.update(slotRef, {
-          status: "AVAILABLE",
-          heldBy: null,
-          holdExpiresAt: null,
-          bookingId: null,
-        });
 
-        await batch.commit();
+        // Release the hold (cleanup happens automatically in slotService)
+        await releaseHold(venueId, date, startTime);
 
         setError("Your hold on this slot has expired.");
         setBooking((prev: any) => ({ ...prev, status: "EXPIRED" }));
@@ -82,75 +75,64 @@ const PaymentPage = () => {
     let isMounted = true;
 
     const fetchBookingDetails = async () => {
-      console.log("🔍 Fetching booking:", bookingId);
-      setLoading(true);
-      setError(null);
-
+      console.log("🔍 Fetching booking details for bookingId:", bookingId);
       try {
-        const bookingDocRef = doc(db, "bookings", bookingId);
-        const bookingDoc = await getDoc(bookingDocRef);
+        const bookingRef = doc(db, "bookings", bookingId);
+        const bookingSnap = await getDoc(bookingRef);
+
+        if (!bookingSnap.exists()) {
+          console.log("❌ No such booking document!");
+          setError("Booking not found.");
+          setLoading(false);
+          return;
+        }
+
+        console.log("✅ Booking document found:", bookingSnap.data());
+        const bookingData = { id: bookingSnap.id, ...bookingSnap.data() };
+        setBooking(bookingData);
 
         if (!isMounted) return;
 
-        if (!bookingDoc.exists()) {
-          console.error("❌ Booking not found:", bookingId);
-          setError("Booking not found. It may have been cancelled or expired.");
-          setLoading(false);
-          return;
+        const venueRef = doc(db, "grounds", bookingData.venueId);
+        const venueSnap = await getDoc(venueRef);
+
+        if (venueSnap.exists()) {
+          setVenue(venueSnap.data());
         }
 
-        const bookingData = bookingDoc.data();
-        console.log("📦 Booking data:", bookingData);
-
-        // Set booking data first
-        setBooking(bookingData);
-
-        if (bookingData.status !== "PENDING_PAYMENT") {
-          setError(
-            `This booking is already ${bookingData.status
-              .toLowerCase()
-              .replace("_", " ")}.`
+        if (
+          bookingData.status === "pending_payment" &&
+          bookingData.createdAt
+        ) {
+          const now = Timestamp.now();
+          const expiryTime = new Timestamp(
+            bookingData.createdAt.seconds + 5 * 60,
+            bookingData.createdAt.nanoseconds
           );
-          setLoading(false);
-          return;
+
+          const remaining = expiryTime.seconds - now.seconds;
+
+          if (remaining > 0) {
+            console.log(`⏱️ Time left: ${remaining}s`);
+            setTimeLeft(remaining);
+          } else {
+            console.log("⚠️ Hold expired, calling handleBookingExpiration");
+            handleBookingExpiration(
+              bookingId,
+              bookingData.venueId,
+              bookingData.date,
+              bookingData.startTime
+            );
+          }
         }
 
-        const now = Timestamp.now().toMillis();
-        const expiry = bookingData.bookingExpiresAt.toMillis();
-
-        if (now >= expiry) {
-          await handleBookingExpiration(bookingId, bookingData.slotId);
-          setLoading(false);
-          return;
-        }
-
-        setTimeLeft(Math.round((expiry - now) / 1000));
-
-        // Fetch venue details
-        const venueDocRef = doc(db, "venues", bookingData.venueId);
-        const venueDoc = await getDoc(venueDocRef);
-
-        if (isMounted && venueDoc.exists()) {
-          console.log("✅ Venue loaded");
-          setVenue(venueDoc.data());
-        } else if (isMounted) {
-          console.warn("⚠️ Venue not found");
-        }
-
-        // Only set loading to false after everything is done
-        if (isMounted) {
-          setLoading(false);
-        }
-      } catch (e: any) {
-        console.error("❌ Failed to fetch booking:", e);
-        if (isMounted) {
-          setError(`Error loading booking: ${e.message}`);
-          setLoading(false);
-        }
+        setLoading(false);
+      } catch (err: any) {
+        console.error("Error fetching booking details:", err);
+        setError("Failed to load booking details.");
+        setLoading(false);
       }
-    };
-
-    fetchBookingDetails();
+    };    fetchBookingDetails();
 
     return () => {
       isMounted = false;
@@ -160,8 +142,13 @@ const PaymentPage = () => {
   // Countdown timer effect
   useEffect(() => {
     if (timeLeft === null || timeLeft <= 0) {
-      if (timeLeft === 0 && booking?.status === "PENDING_PAYMENT") {
-        handleBookingExpiration(bookingId!, booking.slotId);
+      if (timeLeft === 0 && booking?.status === "pending_payment") {
+        handleBookingExpiration(
+          bookingId!,
+          booking.venueId,
+          booking.date,
+          booking.startTime
+        );
       }
       return;
     }
@@ -182,38 +169,24 @@ const PaymentPage = () => {
     setIsProcessing(true);
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const bookingDocRef = doc(db, "bookings", bookingId);
-        const slotDocRef = doc(db, "slots", booking.slotId);
-        const bookingDoc = await transaction.get(bookingDocRef);
-
-        if (!bookingDoc.exists()) {
-          throw new Error("Booking not found.");
-        }
-
-        const bookingData = bookingDoc.data();
-
-        if (bookingData.status !== "PENDING_PAYMENT") {
-          throw new Error("This booking is no longer available for payment.");
-        }
-
-        if (
-          Timestamp.now().toMillis() > bookingData.bookingExpiresAt.toMillis()
-        ) {
-          throw new Error("Your hold on this slot has expired.");
-        }
-
-        transaction.update(bookingDocRef, {
-          status: "CONFIRMED",
-          paymentTimestamp: serverTimestamp(),
-        });
-
-        transaction.update(slotDocRef, {
-          status: "BOOKED",
-          heldBy: null,
-          holdExpiresAt: null,
+      // Convert hold to booking
+      await bookSlot(
+        booking.venueId,
+        booking.date,
+        booking.startTime,
+        {
           bookingId: bookingId,
-        });
+          bookingType: "website",
+          status: "confirmed",
+          userId: user.uid,
+        }
+      );
+
+      // Update booking document
+      const bookingRef = doc(db, "bookings", bookingId);
+      await updateDoc(bookingRef, {
+        status: "confirmed",
+        paymentTimestamp: serverTimestamp(),
       });
 
       toast.success("Booking confirmed! Your slot is reserved.");
