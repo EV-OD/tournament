@@ -356,7 +356,7 @@ export async function blockSlot(
       startTime,
       reason,
       blockedBy,
-      blockedAt: serverTimestamp(),
+      blockedAt: Timestamp.now(),
     };
     
     await updateDoc(docRef, {
@@ -443,7 +443,7 @@ export async function bookSlot(
         customerPhone: bookingData.customerPhone,
         notes: bookingData.notes,
         userId: bookingData.userId,
-        createdAt: serverTimestamp(),
+        createdAt: Timestamp.now(),
       };
       
       transaction.update(docRef, {
@@ -545,7 +545,7 @@ export async function holdSlot(
         userId,
         bookingId,
         holdExpiresAt,
-        createdAt: serverTimestamp(),
+        createdAt: Timestamp.now(),
       };
       
       transaction.update(docRef, {
@@ -649,7 +649,7 @@ export async function reserveSlot(
       startTime,
       note,
       reservedBy,
-      reservedAt: serverTimestamp(),
+      reservedAt: Timestamp.now(),
     };
     
     await updateDoc(docRef, {
