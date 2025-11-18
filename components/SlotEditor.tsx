@@ -1,23 +1,24 @@
+/**
+ * SlotEditor - Refactored to use slotService
+ * 
+ * This component allows managers to configure slot settings
+ * (start time, end time, duration, days of week) for their venue.
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import {
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  doc,
-  orderBy,
-  serverTimestamp,
-  updateDoc,
-} from "firebase/firestore";
+  getVenueSlots,
+  initializeVenueSlots,
+  updateSlotConfig,
+  type SlotConfig,
+} from "@/lib/slotService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Card,
@@ -26,360 +27,290 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2 } from "lucide-react";
 
 type SlotEditorProps = {
   venueId: string;
 };
 
-interface Slot {
-  id: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  status: "available" | "booked";
-}
+const DAYS_OF_WEEK = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+];
 
 export default function SlotEditor({ venueId }: SlotEditorProps) {
-  const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [newSlot, setNewSlot] = useState({
-    date: "",
-    startTime: "",
-    endTime: "",
-  });
-  const [reserveDialogOpen, setReserveDialogOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
-  const [reservationDetails, setReservationDetails] = useState({
-    customerName: "",
-    customerPhone: "",
-    notes: "",
+  const [saving, setSaving] = useState<boolean>(false);
+  const [initialized, setInitialized] = useState<boolean>(false);
+  
+  const [config, setConfig] = useState<SlotConfig>({
+    startTime: "06:00",
+    endTime: "22:00",
+    slotDuration: 60,
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    timezone: "Asia/Kathmandu",
   });
 
-  const fetchSlots = async () => {
-    setLoading(true);
-    try {
-      const q = query(
-        collection(db, "slots"),
-        where("groundId", "==", venueId),
-        orderBy("date"),
-        orderBy("startTime")
-      );
-      const querySnapshot = await getDocs(q);
-      const fetchedSlots: Slot[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        fetchedSlots.push({
-          id: doc.id,
-          date: data.date,
-          startTime: data.startTime,
-          endTime: data.endTime,
-          status: data.status,
-        });
-      });
-      setSlots(fetchedSlots);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to fetch time slots.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ============================================================================
+  // Load Current Configuration
+  // ============================================================================
 
   useEffect(() => {
-    if (venueId) {
-      fetchSlots();
+    async function loadConfig() {
+      setLoading(true);
+      try {
+        const venueSlots = await getVenueSlots(venueId);
+        
+        if (venueSlots) {
+          setConfig(venueSlots.config);
+          setInitialized(true);
+        } else {
+          setInitialized(false);
+        }
+      } catch (error) {
+        console.error("Error loading slot config:", error);
+        toast.error("Failed to load slot configuration");
+      } finally {
+        setLoading(false);
+      }
     }
+
+    loadConfig();
   }, [venueId]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setNewSlot((prev) => ({ ...prev, [name]: value }));
-  };
+  // ============================================================================
+  // Save Configuration
+  // ============================================================================
 
-  const handleAddSlot = async () => {
-    if (!newSlot.date || !newSlot.startTime || !newSlot.endTime) {
-      toast.error("Please fill in all fields to add a slot.");
+  const handleSaveConfig = async () => {
+    // Validation
+    if (!config.startTime || !config.endTime) {
+      toast.error("Start time and end time are required");
       return;
     }
-    setLoading(true);
+
+    if (config.slotDuration < 15 || config.slotDuration > 240) {
+      toast.error("Slot duration must be between 15 and 240 minutes");
+      return;
+    }
+
+    if (config.daysOfWeek.length === 0) {
+      toast.error("At least one day must be selected");
+      return;
+    }
+
+    const [startHour, startMin] = config.startTime.split(":").map(Number);
+    const [endHour, endMin] = config.endTime.split(":").map(Number);
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+
+    if (startMinutes >= endMinutes) {
+      toast.error("End time must be after start time");
+      return;
+    }
+
+    const totalMinutes = endMinutes - startMinutes;
+    if (totalMinutes < config.slotDuration) {
+      toast.error("Time range is too short for the slot duration");
+      return;
+    }
+
+    setSaving(true);
+
     try {
-      await addDoc(collection(db, "slots"), {
-        groundId: venueId,
-        date: newSlot.date,
-        startTime: newSlot.startTime,
-        endTime: newSlot.endTime,
-        status: "available",
-        createdAt: serverTimestamp(),
-      });
-      toast.success("Slot added successfully!");
-      setNewSlot({ date: "", startTime: "", endTime: "" });
-      fetchSlots(); // Refresh the list
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to add slot.");
+      if (initialized) {
+        // Update existing config
+        await updateSlotConfig(venueId, config);
+        toast.success("Slot configuration updated successfully");
+      } else {
+        // Initialize new config
+        await initializeVenueSlots(venueId, config);
+        setInitialized(true);
+        toast.success("Slot configuration initialized successfully");
+      }
+    } catch (error) {
+      console.error("Error saving slot config:", error);
+      toast.error("Failed to save slot configuration");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleDeleteSlot = async (slotId: string, status: string) => {
-    if (status === "booked") {
-      toast.error(
-        "Cannot delete a booked slot. Please cancel the booking first."
-      );
-      return;
-    }
-    setLoading(true);
-    try {
-      await deleteDoc(doc(db, "slots", slotId));
-      toast.success("Slot deleted successfully!");
-      fetchSlots(); // Refresh the list
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to delete slot.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ============================================================================
+  // Helpers
+  // ============================================================================
 
-  const handleOpenReserveDialog = (slot: Slot) => {
-    if (slot.status === "booked") {
-      toast.error("This slot is already booked.");
-      return;
-    }
-    setSelectedSlot(slot);
-    setReservationDetails({ customerName: "", customerPhone: "", notes: "" });
-    setReserveDialogOpen(true);
-  };
-
-  const handleReserveSlot = async () => {
-    if (!selectedSlot) return;
-    
-    if (!reservationDetails.customerName.trim()) {
-      toast.error("Customer name is required.");
-      return;
-    }
-
-    if (!reservationDetails.customerPhone.trim()) {
-      toast.error("Customer phone number is required.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Create a physical booking record
-      const bookingRef = await addDoc(collection(db, "bookings"), {
-        venueId,
-        slotId: selectedSlot.id,
-        timeSlot: `${selectedSlot.date} ${selectedSlot.startTime} - ${selectedSlot.endTime}`,
-        customerName: reservationDetails.customerName,
-        customerPhone: reservationDetails.customerPhone,
-        notes: reservationDetails.notes,
-        bookingType: "physical",
-        status: "confirmed",
-        createdAt: serverTimestamp(),
+  const toggleDay = (day: number) => {
+    if (config.daysOfWeek.includes(day)) {
+      setConfig({
+        ...config,
+        daysOfWeek: config.daysOfWeek.filter((d) => d !== day),
       });
-
-      // Update slot status to booked
-      await updateDoc(doc(db, "slots", selectedSlot.id), {
-        status: "booked",
-        bookingId: bookingRef.id,
+    } else {
+      setConfig({
+        ...config,
+        daysOfWeek: [...config.daysOfWeek, day].sort(),
       });
-
-      toast.success("Slot reserved successfully for physical booking!");
-      setReserveDialogOpen(false);
-      fetchSlots();
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to reserve slot.");
-    } finally {
-      setLoading(false);
     }
   };
+
+  const calculateSlotCount = (): number => {
+    const [startHour, startMin] = config.startTime.split(":").map(Number);
+    const [endHour, endMin] = config.endTime.split(":").map(Number);
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    const totalMinutes = endMinutes - startMinutes;
+    return Math.floor(totalMinutes / config.slotDuration);
+  };
+
+  // ============================================================================
+  // Render
+  // ============================================================================
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const slotsPerDay = calculateSlotCount();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Edit Time Slots</CardTitle>
-        <CardDescription>
-          Add or remove available time slots for your ground.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4">
-          <h4 className="font-semibold">Add New Slot</h4>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <Label htmlFor="date">Date</Label>
-              <Input
-                type="date"
-                id="date"
-                name="date"
-                value={newSlot.date}
-                onChange={handleInputChange}
-              />
-            </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Slot Configuration</CardTitle>
+          <CardDescription>
+            {initialized
+              ? "Update your venue's slot settings. Changes will apply to future slots."
+              : "Initialize slot settings for your venue. This is required before accepting bookings."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Time Range */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="startTime">Start Time</Label>
               <Input
-                type="time"
                 id="startTime"
-                name="startTime"
-                value={newSlot.startTime}
-                onChange={handleInputChange}
+                type="time"
+                value={config.startTime}
+                onChange={(e) =>
+                  setConfig({ ...config, startTime: e.target.value })
+                }
               />
             </div>
             <div>
               <Label htmlFor="endTime">End Time</Label>
               <Input
-                type="time"
                 id="endTime"
-                name="endTime"
-                value={newSlot.endTime}
-                onChange={handleInputChange}
+                type="time"
+                value={config.endTime}
+                onChange={(e) =>
+                  setConfig({ ...config, endTime: e.target.value })
+                }
               />
             </div>
           </div>
-          <Button onClick={handleAddSlot} disabled={loading} className="w-full">
-            {loading ? "Adding..." : "Add Slot"}
-          </Button>
-        </div>
-        <div className="mt-6">
-          <h4 className="font-semibold mb-2">Existing Slots</h4>
-          {loading && <p>Loading slots...</p>}
-          {!loading && slots.length === 0 && <p>No slots created yet.</p>}
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {slots.map((slot) => (
-              <div
-                key={slot.id}
-                className="flex justify-between items-center p-3 border rounded-lg"
-              >
-                <div className="flex-1">
-                  <p className="font-medium">{`${slot.date} ${slot.startTime} - ${slot.endTime}`}</p>
-                  <p
-                    className={`text-sm font-semibold ${
-                      slot.status === "booked"
-                        ? "text-red-500"
-                        : "text-green-500"
-                    }`}
+
+          {/* Slot Duration */}
+          <div>
+            <Label htmlFor="slotDuration">Slot Duration (minutes)</Label>
+            <Input
+              id="slotDuration"
+              type="number"
+              min="15"
+              max="240"
+              step="15"
+              value={config.slotDuration}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  slotDuration: parseInt(e.target.value) || 60,
+                })
+              }
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {slotsPerDay} slots per day ({config.startTime} - {config.endTime})
+            </p>
+          </div>
+
+          {/* Days of Week */}
+          <div>
+            <Label>Operating Days</Label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+              {DAYS_OF_WEEK.map((day) => (
+                <div key={day.value} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`day-${day.value}`}
+                    checked={config.daysOfWeek.includes(day.value)}
+                    onCheckedChange={() => toggleDay(day.value)}
+                  />
+                  <Label
+                    htmlFor={`day-${day.value}`}
+                    className="text-sm font-normal cursor-pointer"
                   >
-                    {slot.status}
-                  </p>
+                    {day.label}
+                  </Label>
                 </div>
-                <div className="flex gap-2">
-                  {slot.status === "available" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenReserveDialog(slot)}
-                      disabled={loading}
-                    >
-                      Reserve
-                    </Button>
-                  )}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDeleteSlot(slot.id, slot.status)}
-                    disabled={loading || slot.status === "booked"}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </CardContent>
-
-      {/* Reserve Slot Dialog */}
-      <Dialog open={reserveDialogOpen} onOpenChange={setReserveDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reserve Slot (Physical Booking)</DialogTitle>
-            <DialogDescription>
-              Enter customer details for this physical booking. No payment processing required.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedSlot && (
-            <div className="bg-blue-50 p-3 rounded-lg mb-4">
-              <p className="text-sm font-semibold text-blue-900">
-                {`${selectedSlot.date} ${selectedSlot.startTime} - ${selectedSlot.endTime}`}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="customerName">Customer Name *</Label>
-              <Input
-                id="customerName"
-                placeholder="Enter customer name"
-                value={reservationDetails.customerName}
-                onChange={(e) =>
-                  setReservationDetails((prev) => ({
-                    ...prev,
-                    customerName: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="customerPhone">Customer Phone *</Label>
-              <Input
-                id="customerPhone"
-                placeholder="Enter phone number"
-                value={reservationDetails.customerPhone}
-                onChange={(e) =>
-                  setReservationDetails((prev) => ({
-                    ...prev,
-                    customerPhone: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="notes">Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Additional notes about the booking..."
-                value={reservationDetails.notes}
-                onChange={(e) =>
-                  setReservationDetails((prev) => ({
-                    ...prev,
-                    notes: e.target.value,
-                  }))
-                }
-                rows={3}
-              />
+              ))}
             </div>
           </div>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setReserveDialogOpen(false)}
-              disabled={loading}
-            >
-              Cancel
+          {/* Timezone */}
+          <div>
+            <Label htmlFor="timezone">Timezone</Label>
+            <Input
+              id="timezone"
+              value={config.timezone}
+              onChange={(e) =>
+                setConfig({ ...config, timezone: e.target.value })
+              }
+              placeholder="Asia/Kathmandu"
+            />
+          </div>
+
+          {/* Save Button */}
+          <div className="flex gap-2">
+            <Button onClick={handleSaveConfig} disabled={saving}>
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {initialized ? "Update Configuration" : "Initialize Slots"}
             </Button>
-            <Button onClick={handleReserveSlot} disabled={loading}>
-              {loading ? "Reserving..." : "Confirm Reservation"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Info Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>How It Works</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            • <strong>Start/End Time:</strong> Define your venue's operating hours
+          </p>
+          <p>
+            • <strong>Slot Duration:</strong> How long each booking slot lasts (15-240 minutes)
+          </p>
+          <p>
+            • <strong>Operating Days:</strong> Select which days your venue is open
+          </p>
+          <p>
+            • <strong>Efficiency:</strong> Slots are generated on-demand, not stored individually
+          </p>
+          <p>
+            • <strong>Bookings:</strong> Only exceptions (blocked, booked, held) are stored
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
