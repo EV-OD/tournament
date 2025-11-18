@@ -204,13 +204,27 @@ const VenuesPage = () => {
   const [mapZoom, setMapZoom] = useState(12);
 
   useEffect(() => {
-    // Get user's location
+    // Get user's location with high accuracy
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-        setUserLocation([latitude, longitude]);
-        setMapCenter([latitude, longitude]);
-      });
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation([latitude, longitude]);
+          setMapCenter([latitude, longitude]);
+          setMapZoom(14);
+        },
+        (error) => {
+          console.error("Error getting user location:", error.message);
+          // Fallback to default location (Kathmandu)
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        },
+      );
+    } else {
+      console.warn("Geolocation is not supported by this browser.");
     }
 
     const fetchVenuesAndRatings = async () => {

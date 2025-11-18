@@ -267,15 +267,34 @@ const VenueMap = () => {
       const venues = await fetchAllVenues();
       await fetchManagedVenues();
 
-      // Get user's current location
+      // Get user's current location with high accuracy
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((position) => {
-          const { latitude, longitude } = position.coords;
-          const loc: [number, number] = [latitude, longitude];
-          setUserLocation(loc);
-          updateDisplayedVenues(venues, "", loc);
-        });
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            console.log("User's location:", latitude, longitude);
+            const loc: [number, number] = [latitude, longitude];
+            setUserLocation(loc);
+            updateDisplayedVenues(venues, "", loc);
+            // Auto-center map on user's real location
+            if (mapRef.current) {
+              mapRef.current.flyTo(loc, 14, {
+                duration: 1.5,
+              });
+            }
+          },
+          (error) => {
+            console.error("Error getting location:", error);
+            updateDisplayedVenues(venues, "", null);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          },
+        );
       } else {
+        console.warn("Geolocation is not supported by this browser.");
         updateDisplayedVenues(venues, "", null);
       }
     };
@@ -534,11 +553,15 @@ const VenueMap = () => {
         <div className="flex-1  relative overflow-hidden grow">
           <div className="absolute inset-0 rounded-lg overflow-hidden border">
             <MapContainer
-              center={userLocation || [27.7172, 85.324]}
-              zoom={userLocation ? 14 : 12}
+              center={[27.7172, 85.324]}
+              zoom={12}
               style={{ height: "100%", width: "100%" }}
               whenReady={(e) => {
                 mapRef.current = e.target;
+                // If user location is already available, center on it
+                if (userLocation) {
+                  e.target.flyTo(userLocation, 14, { duration: 1 });
+                }
               }}
             >
               <TileLayer
