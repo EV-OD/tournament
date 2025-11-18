@@ -352,7 +352,7 @@ const VenueMap = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] w-screen overflow-hidden py-10">
+    <div className="flex flex-col h-[calc(100vh-100px)] w-screen overflow-hidden py-10 px-5">
       <AddGround
         newGroundLocation={newGroundLocation}
         isFormOpen={isFormOpen}
@@ -550,12 +550,12 @@ const VenueMap = () => {
         </div>
 
         {/* Right Map Section */}
-        <div className="flex-1  relative overflow-hidden grow">
+        <div className="flex-1  relative overflow-hidden">
           <div className="absolute inset-0 rounded-lg overflow-hidden border">
             <MapContainer
               center={[27.7172, 85.324]}
               zoom={12}
-              style={{ height: "100%", width: "100%" }}
+              style={{ width: "100%", height: "100%" }}
               whenReady={(e) => {
                 mapRef.current = e.target;
                 // If user location is already available, center on it

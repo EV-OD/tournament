@@ -63,7 +63,7 @@ export default function Auth() {
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent className="w-56">
+      <DropdownMenuContent className="w-56 z-[1000] relative">
         <div className="px-3 py-2">
           <p className="text-sm font-medium">
             {user.displayName ?? user.email}

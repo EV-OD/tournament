@@ -260,11 +260,12 @@ const VenuesPage = () => {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] w-screen p-5 overflow-hidden">
+    <div className="flex h-[calc(100vh-100px)] w-screen p-5 overflow-hidden">
       {/* Left Sidebar */}
       <div className="w-96 border-r bg-background flex flex-col overflow-hidden">
         <div className="p-4 flex-shrink-0">
           <VenueFilter
+            className="flex flex-col h-[calc(100vh-4rem)] w-screen overflow-hidden py-10"
             allVenues={allVenues}
             setFilteredVenues={setFilteredVenues}
           />

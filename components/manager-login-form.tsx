@@ -44,7 +44,7 @@ export function ManagerLoginForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-  const next = searchParams?.get("next") ?? "/manager";
+  const next = searchParams?.get("next") ?? "/";
 
   // Inline field errors for better UX
   const [emailError, setEmailError] = useState<string | null>(null);

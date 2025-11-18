@@ -42,7 +42,11 @@ const NAV_ITEMS = [
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname() || "/admin/overview";
 
   const handleSignOut = async () => {
@@ -57,19 +61,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <AdminGuard>
       <SidebarProvider defaultOpen>
-        <div className="min-h-screen flex bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+        <div className="min-h-screen flex text-slate-900 dark:text-slate-100 w-screen">
           {/* Sidebar (visible on lg+) */}
-          <aside className="hidden lg:flex lg:flex-col w-72 border-r border-slate-200 dark:border-slate-800 bg-transparent">
+          <aside className="hidden lg:flex lg:flex-col border-r border-slate-200 dark:border-slate-800 bg-transparent">
             <Sidebar>
               <SidebarHeader>
                 <div className="px-4 py-5">
-                  <Link href="/admin/overview" className="flex items-center gap-3">
+                  <Link
+                    href="/admin/overview"
+                    className="flex items-center gap-3"
+                  >
                     <div className="bg-primary text-primary-foreground rounded-md p-2">
                       <Home className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="text-sm font-semibold">Futsal Admin</div>
-                      <div className="text-xs text-muted-foreground">Control panel</div>
+                      <div className="text-xs text-muted-foreground">
+                        Control panel
+                      </div>
                     </div>
                   </Link>
                 </div>
@@ -119,11 +128,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </aside>
 
           {/* Main content area */}
-          <main className="flex-1 min-h-screen">
+          <main className="flex-1 min-h-screen w-full">
             {/* Top bar for mobile and small screens */}
             <div className="lg:hidden border-b border-slate-200 dark:border-slate-800 bg-transparent">
-              <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-                <Link href="/admin/overview" className="flex items-center gap-3">
+              <div className="max-w-7xl px-4 py-3 flex items-center justify-between">
+                <Link
+                  href="/admin/overview"
+                  className="flex items-center gap-3"
+                >
                   <div className="bg-primary text-primary-foreground rounded-md p-2">
                     <Home className="w-5 h-5" />
                   </div>
@@ -139,25 +151,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
 
             {/* Content */}
-            <div className="max-w-7xl mx-auto px-4 py-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  {/* Derive a simple title from the pathname */}
-                  <h1 className="text-2xl font-bold">
-                    {deriveTitleFromPath(pathname)}
-                  </h1>
-                  <div className="text-sm text-muted-foreground">Overview & controls</div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {/* reserved for actions: refresh, filters, etc. */}
-                  <Button onClick={() => window.location.reload()} variant="ghost" size="sm">
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-
-              {/* Panel */}
+            <div className="px-4 py-6 w-full">
               <div className="bg-transparent">{children}</div>
             </div>
           </main>
@@ -171,7 +165,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 function deriveTitleFromPath(path: string) {
   const parts = path.replace(/^\/+/, "").split("/");
   // admin or admin/overview => Overview
-  if (parts.length <= 1 || parts[1] === "" || parts[1] === "overview") return "Overview";
+  if (parts.length <= 1 || parts[1] === "" || parts[1] === "overview")
+    return "Overview";
   const p = parts[1];
   // convert kebab to Title Case
   return p

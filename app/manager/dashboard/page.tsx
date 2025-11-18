@@ -27,8 +27,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import Link from "next/link";
+import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 
 const ManagerDashboardPage = () => {
   const { user } = useAuth();
@@ -39,7 +40,7 @@ const ManagerDashboardPage = () => {
   });
   const [recentBookings, setRecentBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -60,24 +61,26 @@ const ManagerDashboardPage = () => {
     if (!user) return;
 
     setLoading(true);
-    setError(null);
 
     try {
       const venuesQuery = query(
         collection(db, "venues"),
-        where("managedBy", "==", user.uid)
+        where("managedBy", "==", user.uid),
       );
       const venueSnapshot = await getDocs(venuesQuery);
 
       if (venueSnapshot.empty) {
-        throw new Error("You are not assigned to manage any venues.");
+        setHasVenueAccess(false);
+        setLoading(false);
+        return;
       }
 
+      setHasVenueAccess(true);
       const managerVenueId = venueSnapshot.docs[0].id;
 
       const bookingsQuery = query(
         collection(db, "bookings"),
-        where("venueId", "==", managerVenueId)
+        where("venueId", "==", managerVenueId),
       );
       const bookingsSnapshot = await getDocs(bookingsQuery);
       const allBookings = bookingsSnapshot.docs.map((doc) => ({
@@ -104,11 +107,12 @@ const ManagerDashboardPage = () => {
       const sortedBookings = allBookings.sort(
         (a, b) =>
           new Date(b.date + "T" + b.startTime).getTime() -
-          new Date(a.date + "T" + a.startTime).getTime()
+          new Date(a.date + "T" + a.startTime).getTime(),
       );
       setRecentBookings(sortedBookings.slice(0, 5));
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
+      console.error("Error fetching dashboard data:", err);
+      setHasVenueAccess(false);
     } finally {
       setLoading(false);
     }
@@ -128,16 +132,8 @@ const ManagerDashboardPage = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-red-50 p-6 rounded-lg">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold text-destructive">
-          An Error Occurred
-        </h2>
-        <p className="text-center text-red-800">{error}</p>
-      </div>
-    );
+  if (hasVenueAccess === false) {
+    return <NoVenueAccess />;
   }
 
   return (

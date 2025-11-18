@@ -23,7 +23,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 
 const VenueSettingsPage = () => {
   const { user } = useAuth();
@@ -36,7 +37,7 @@ const VenueSettingsPage = () => {
   });
   const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
 
   const fetchVenueDetails = useCallback(async () => {
     if (!user) return;
@@ -44,13 +45,17 @@ const VenueSettingsPage = () => {
     try {
       const venuesQuery = query(
         collection(db, "venues"),
-        where("managedBy", "==", user.uid)
+        where("managedBy", "==", user.uid),
       );
       const venueSnapshot = await getDocs(venuesQuery);
 
       if (venueSnapshot.empty) {
-        throw new Error("You are not assigned to manage any venues.");
+        setHasVenueAccess(false);
+        setLoading(false);
+        return;
       }
+
+      setHasVenueAccess(true);
 
       const venueDoc = venueSnapshot.docs[0];
       setVenueId(venueDoc.id);
@@ -62,7 +67,8 @@ const VenueSettingsPage = () => {
         price: venueData.price ? venueData.price.toString() : "",
       });
     } catch (err: any) {
-      setError(err.message || "Could not load venue details.");
+      console.error("Error fetching venue details:", err);
+      toast.error("Failed to load venue details. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -113,16 +119,8 @@ const VenueSettingsPage = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-red-50 p-6 rounded-lg">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold text-destructive">
-          An Error Occurred
-        </h2>
-        <p className="text-center text-red-800">{error}</p>
-      </div>
-    );
+  if (hasVenueAccess === false) {
+    return <NoVenueAccess />;
   }
 
   return (

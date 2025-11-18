@@ -24,36 +24,40 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 
 const ManagerBookingsPage = () => {
   const { user } = useAuth();
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
 
   const fetchVenueAndBookings = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
-    setError(null);
 
     try {
       const venuesQuery = query(
         collection(db, "venues"),
-        where("managedBy", "==", user.uid)
+        where("managedBy", "==", user.uid),
       );
       const venueSnapshot = await getDocs(venuesQuery);
 
       if (venueSnapshot.empty) {
-        throw new Error("You are not assigned to manage any venues.");
+        setHasVenueAccess(false);
+        setLoading(false);
+        return;
       }
+
+      setHasVenueAccess(true);
 
       const managerVenueId = venueSnapshot.docs[0].id;
 
       const bookingsQuery = query(
         collection(db, "bookings"),
-        where("venueId", "==", managerVenueId)
+        where("venueId", "==", managerVenueId),
       );
       const bookingsSnapshot = await getDocs(bookingsQuery);
       const bookingsData = bookingsSnapshot.docs.map((doc) => ({
@@ -65,11 +69,11 @@ const ManagerBookingsPage = () => {
         const userIds = [...new Set(bookingsData.map((b) => b.userId))];
         const usersQuery = query(
           collection(db, "users"),
-          where(documentId(), "in", userIds)
+          where(documentId(), "in", userIds),
         );
         const usersSnapshot = await getDocs(usersQuery);
         const usersMap = new Map(
-          usersSnapshot.docs.map((doc) => [doc.id, doc.data().displayName])
+          usersSnapshot.docs.map((doc) => [doc.id, doc.data().displayName]),
         );
 
         const combinedData = bookingsData.map((booking) => ({
@@ -80,7 +84,7 @@ const ManagerBookingsPage = () => {
         combinedData.sort(
           (a, b) =>
             new Date(b.date + "T" + b.startTime).getTime() -
-            new Date(a.date + "T" + a.startTime).getTime()
+            new Date(a.date + "T" + a.startTime).getTime(),
         );
         setBookings(combinedData);
       } else {
@@ -88,7 +92,7 @@ const ManagerBookingsPage = () => {
       }
     } catch (err: any) {
       console.error("Error fetching bookings:", err);
-      setError(err.message || "An unexpected error occurred.");
+      toast.error("Failed to load bookings. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -103,7 +107,7 @@ const ManagerBookingsPage = () => {
   const handleCancelBooking = async (bookingId: string, slotId: string) => {
     if (
       !window.confirm(
-        "Are you sure you want to cancel this booking? This will make the slot available again and notify the user."
+        "Are you sure you want to cancel this booking? This will make the slot available again and notify the user.",
       )
     )
       return;
@@ -153,16 +157,8 @@ const ManagerBookingsPage = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-red-50 dark:bg-red-900/20 p-6 rounded-lg border border-destructive/50">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold text-destructive">
-          An Error Occurred
-        </h2>
-        <p className="text-center text-red-800 dark:text-red-200">{error}</p>
-      </div>
-    );
+  if (hasVenueAccess === false) {
+    return <NoVenueAccess />;
   }
 
   return (

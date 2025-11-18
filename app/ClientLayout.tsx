@@ -22,9 +22,7 @@ export default function ClientLayout({
       {/* Header is hidden on auth pages */}
       <Header />
       {/* Main app container — full height for auth pages, container for others */}
-      <main className={isAuthPage ? "min-h-screen" : "container w-screen"}>
-        {children}
-      </main>
+      <main className={isAuthPage ? "min-h-screen" : ""}>{children}</main>
     </AuthProvider>
   );
 }

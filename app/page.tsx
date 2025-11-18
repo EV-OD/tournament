@@ -13,7 +13,7 @@ const Home = () => {
   const { role } = useAuth();
 
   return (
-    <main className="container">
+    <main>
       <VenueMap />
     </main>
   );
