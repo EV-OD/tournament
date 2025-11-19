@@ -135,8 +135,6 @@ const ReviewsSection = ({ venueId }: ReviewsSectionProps) => {
           reviewCount: newCount,
         });
 
-        // Update local state (optimistic UI update not strictly needed since we refetch or just append)
-        // We'll just append to the local list for immediate feedback
         setComments((prev) => [{ id: commentRef.id, ...commentData }, ...prev]);
       });
 
@@ -144,10 +142,7 @@ const ReviewsSection = ({ venueId }: ReviewsSectionProps) => {
       setRating(0);
       setHoverRating(0);
       toast.success("Review posted successfully");
-      
-      // Optional: Trigger a refresh of the venue data in the parent component if needed
-      // For now, the user will see the updated comment list immediately.
-      
+   
     } catch (error) {
       console.error("Error adding comment:", error);
       toast.error("Failed to add review");

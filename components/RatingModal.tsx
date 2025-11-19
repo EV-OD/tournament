@@ -59,11 +59,6 @@ const RatingModal = ({
         const currentCount = venueData.reviewCount || 0;
 
         // 3. Calculate new stats
-        // Note: If updating an existing review, the math is more complex. 
-        // For simplicity in this flow (which is typically "Rate your booking" for the first time), 
-        // we assume it's a new rating for calculation purposes or we'd need to check if review exists.
-        // The modal is usually shown for unrated bookings, so we treat it as a new rating contribution.
-        
         const newCount = currentCount + 1;
         const newAverage = ((currentRating * currentCount) + rating) / newCount;
         const roundedAverage = Math.round(newAverage * 10) / 10;

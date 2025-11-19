@@ -21,16 +21,6 @@ const VenueHeader = ({
   averageRating = 0,
   reviewCount = 0,
 }: VenueHeaderProps) => {
-  // We no longer fetch reviews here, relying on props passed from parent
-  // which come directly from the venue document.
-  
-  // For breakdown, we could still fetch or store it in the venue doc.
-  // For now, let's simplify and remove the breakdown fetching or keep it optional.
-  // Since the user asked for "rating calculation", storing the average is key.
-  // The breakdown requires fetching all reviews or storing a map.
-  // Let's keep the breakdown static or hidden for now to match the new architecture,
-  // or fetch it ONLY if the user expands the details (optimization).
-  // For this step, I will remove the automatic fetching to rely on the props.
   
   const [ratingBreakdown, setRatingBreakdown] = useState<Record<number, number>>({
     5: 0,

@@ -1,11 +1,3 @@
-/**
- * WeeklySlotsGrid - Refactored to use slotService
- * 
- * This component displays a weekly view of slots using the new
- * venue-based slot architecture. Slots are reconstructed on-demand
- * from venue configuration + exceptions.
- */
-
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -88,10 +80,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const [isManager, setIsManager] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // ============================================================================
-  // Helper Functions
-  // ============================================================================
-
   function getWeekEnd(weekStart: Date): Date {
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 6);
@@ -113,10 +101,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     });
   }
 
-  // ============================================================================
-  // Check Manager Access & Load Venue Details
-  // ============================================================================
-
   useEffect(() => {
     async function fetchData() {
       try {
@@ -137,10 +121,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
 
     fetchData();
   }, [user, groundId]);
-
-  // ============================================================================
-  // Load Slots
-  // ============================================================================
 
   const loadSlots = useCallback(async () => {
     setLoading(true);
@@ -167,11 +147,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   }, [loadSlots]);
 
 
-
-  // ============================================================================
-  // Slot Interaction Handlers
-  // ============================================================================
-
   const handleSlotClick = (slot: ReconstructedSlot) => {
     // User can't click held slots (except their own - they should go to payment)
     if (!isManager && slot.status === "HELD") {
@@ -197,8 +172,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       return;
     }
 
-    // Manager reserve slot (right-click or long-press for block?)
-    // For now, clicking available = book, we'll add a button for block
     if (isManager && slot.status === "AVAILABLE") {
       handlePhysicalReservation(slot);
       return;
@@ -228,10 +201,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
 
     return false;
   };
-
-  // ============================================================================
-  // User Booking Flow
-  // ============================================================================
 
   const handleUserBooking = async () => {
     if (!selectedSlot || !user) return;
@@ -286,9 +255,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Manager Physical Reservation Flow
-  // ============================================================================
 
   const handlePhysicalReservation = (slot: ReconstructedSlot) => {
     setSelectedSlot(slot);
@@ -356,10 +322,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Manager Unbook Physical
-  // ============================================================================
-
+ 
   const handleUnbookPhysical = async (slot: ReconstructedSlot) => {
     if (!isManager || slot.status !== "BOOKED" || slot.bookingType !== "physical") {
       return;
@@ -383,10 +346,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Manager Block/Unblock Slots
-  // ============================================================================
-
+ 
   const handleOpenBlockDialog = (slot: ReconstructedSlot) => {
     setSelectedSlot(slot);
     setBlockReason("");
@@ -439,10 +399,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       setIsProcessing(false);
     }
   };
-
-  // ============================================================================
-  // Slot Styling
-  // ============================================================================
 
   const getSlotClassName = (slot: ReconstructedSlot): string => {
     const baseClasses = "relative h-14 rounded-lg border text-sm font-medium transition-all duration-200 flex flex-col items-center justify-center gap-0.5 overflow-hidden";
@@ -519,10 +475,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
         return <span>{slot.startTime}</span>;
     }
   };
-
-  // ============================================================================
-  // Render
-  // ============================================================================
 
   if (loading) {
     return (

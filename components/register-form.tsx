@@ -24,17 +24,6 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { mapAuthError } from "@/lib/auth";
 
-/**
- * RegisterForm
- *
- * - Matches the LoginForm visual style and layout.
- * - Provides registration via email/password and Google OAuth.
- * - Ensures a users/{uid} document exists (role: 'user').
- * - Respects a `next` query param for redirect after registration.
- *
- * Usage:
- * <RegisterForm className="..." />
- */
 export function RegisterForm({
   role = "user",
   className,
