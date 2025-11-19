@@ -4,12 +4,6 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
-/**
- * UserGuard
- *
- * Protects routes that require user authentication and user role.
- * Redirects to /login if not authenticated or not a user.
- */
 export default function UserGuard({
   children,
 }: Readonly<{

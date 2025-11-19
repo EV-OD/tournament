@@ -4,12 +4,6 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
-/**
- * ManagerGuard
- *
- * Protects routes that require manager authentication and manager role.
- * Redirects to /login/manager if not authenticated or not a manager.
- */
 export default function ManagerGuard({
   children,
 }: Readonly<{

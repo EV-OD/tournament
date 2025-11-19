@@ -1,11 +1,3 @@
-/**
- * WeeklySlotsGrid - Refactored to use slotService
- * 
- * This component displays a weekly view of slots using the new
- * venue-based slot architecture. Slots are reconstructed on-demand
- * from venue configuration + exceptions.
- */
-
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -25,8 +17,6 @@ import {
   unbookSlot,
   holdSlot,
   releaseHold,
-  reserveSlot,
-  unreserveSlot,
   blockSlot,
   unblockSlot,
   type ReconstructedSlot,
@@ -46,6 +36,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Loader2, Store } from "lucide-react";
+import { BookingSummary } from "@/components/BookingSummary";
+import { cn } from "@/lib/utils";
 
 interface WeeklySlotsGridProps {
   groundId: string;
@@ -63,9 +55,12 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   
   const [slots, setSlots] = useState<ReconstructedSlot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(
-    getWeekStart(new Date())
-  );
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const [venueDetails, setVenueDetails] = useState<any>(null);
   
   // Dialog states
   const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
@@ -85,17 +80,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   const [isManager, setIsManager] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // ============================================================================
-  // Helper Functions
-  // ============================================================================
-
-  function getWeekStart(date: Date): Date {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day;
-    return new Date(d.setDate(diff));
-  }
-
   function getWeekEnd(weekStart: Date): Date {
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 6);
@@ -103,7 +87,10 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   }
 
   function formatDate(date: Date): string {
-    return date.toISOString().split("T")[0];
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   function getDayLabel(date: Date): string {
@@ -114,35 +101,26 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     });
   }
 
-  // ============================================================================
-  // Check Manager Access
-  // ============================================================================
-
   useEffect(() => {
-    async function checkManagerAccess() {
-      if (!user) {
-        setIsManager(false);
-        return;
-      }
-
+    async function fetchData() {
       try {
         const venueDoc = await getDoc(doc(db, "venues", groundId));
         if (venueDoc.exists()) {
           const venueData = venueDoc.data();
-          const userIsManager = venueData.managedBy === user.uid;
-          setIsManager(userIsManager);
+          setVenueDetails(venueData);
+          
+          if (user) {
+            const userIsManager = venueData.managedBy === user.uid;
+            setIsManager(userIsManager);
+          }
         }
       } catch (error) {
-        console.error("Error checking manager access:", error);
+        console.error("Error fetching venue data:", error);
       }
     }
 
-    checkManagerAccess();
+    fetchData();
   }, [user, groundId]);
-
-  // ============================================================================
-  // Load Slots
-  // ============================================================================
 
   const loadSlots = useCallback(async () => {
     setLoading(true);
@@ -168,25 +146,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     loadSlots();
   }, [loadSlots]);
 
-  // ============================================================================
-  // Week Navigation
-  // ============================================================================
-
-  const handlePreviousWeek = () => {
-    const newWeekStart = new Date(currentWeekStart);
-    newWeekStart.setDate(newWeekStart.getDate() - 7);
-    setCurrentWeekStart(newWeekStart);
-  };
-
-  const handleNextWeek = () => {
-    const newWeekStart = new Date(currentWeekStart);
-    newWeekStart.setDate(newWeekStart.getDate() + 7);
-    setCurrentWeekStart(newWeekStart);
-  };
-
-  // ============================================================================
-  // Slot Interaction Handlers
-  // ============================================================================
 
   const handleSlotClick = (slot: ReconstructedSlot) => {
     // User can't click held slots (except their own - they should go to payment)
@@ -213,8 +172,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       return;
     }
 
-    // Manager reserve slot (right-click or long-press for block?)
-    // For now, clicking available = book, we'll add a button for block
     if (isManager && slot.status === "AVAILABLE") {
       handlePhysicalReservation(slot);
       return;
@@ -245,19 +202,13 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     return false;
   };
 
-  // ============================================================================
-  // User Booking Flow
-  // ============================================================================
-
   const handleUserBooking = async () => {
     if (!selectedSlot || !user) return;
 
     setIsProcessing(true);
 
     try {
-      // Get venue price
-      const venueDoc = await getDoc(doc(db, "venues", groundId));
-      const venuePrice = venueDoc.exists() ? venueDoc.data().pricePerHour : 1000;
+      const venuePrice = venueDetails?.pricePerHour || 1000;
 
       // 1. Hold the slot
       const bookingId = `booking_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -304,9 +255,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Manager Physical Reservation Flow
-  // ============================================================================
 
   const handlePhysicalReservation = (slot: ReconstructedSlot) => {
     setSelectedSlot(slot);
@@ -374,10 +322,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Manager Unbook Physical
-  // ============================================================================
-
+ 
   const handleUnbookPhysical = async (slot: ReconstructedSlot) => {
     if (!isManager || slot.status !== "BOOKED" || slot.bookingType !== "physical") {
       return;
@@ -401,10 +346,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Manager Block/Unblock Slots
-  // ============================================================================
-
+ 
   const handleOpenBlockDialog = (slot: ReconstructedSlot) => {
     setSelectedSlot(slot);
     setBlockReason("");
@@ -458,36 +400,32 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     }
   };
 
-  // ============================================================================
-  // Slot Styling
-  // ============================================================================
-
   const getSlotClassName = (slot: ReconstructedSlot): string => {
-    const baseClasses = "p-2 text-center text-sm rounded border transition-all";
+    const baseClasses = "relative h-14 rounded-lg border text-sm font-medium transition-all duration-200 flex flex-col items-center justify-center gap-0.5 overflow-hidden";
     
     const clickable = canClickSlot(slot);
     const hoverClasses = clickable
-      ? "cursor-pointer hover:shadow-md hover:scale-105"
-      : "cursor-default";
+      ? "cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+      : "cursor-default opacity-80";
 
     switch (slot.status) {
       case "AVAILABLE":
-        return `${baseClasses} ${hoverClasses} bg-green-100 border-green-300 text-green-800`;
+        return cn(baseClasses, hoverClasses, "bg-green-50 border-green-200 text-green-700 hover:bg-green-100 hover:border-green-300");
       
       case "BOOKED":
         if (slot.bookingType === "physical") {
-          return `${baseClasses} ${hoverClasses} bg-purple-100 border-purple-300 text-purple-800`;
+          return cn(baseClasses, hoverClasses, "bg-purple-50 border-purple-200 text-purple-700");
         }
-        return `${baseClasses} bg-yellow-100 border-yellow-300 text-yellow-800`;
+        return cn(baseClasses, "bg-amber-50 border-amber-200 text-amber-700");
       
       case "BLOCKED":
-        return `${baseClasses} bg-red-100 border-red-300 text-red-800`;
+        return cn(baseClasses, hoverClasses, "bg-red-50 border-red-200 text-red-700");
       
       case "HELD":
-        return `${baseClasses} bg-blue-100 border-blue-300 text-blue-800`;
+        return cn(baseClasses, "bg-blue-50 border-blue-200 text-blue-700");
       
       case "RESERVED":
-        return `${baseClasses} bg-gray-100 border-gray-300 text-gray-800`;
+        return cn(baseClasses, "bg-gray-50 border-gray-200 text-gray-600");
       
       default:
         return baseClasses;
@@ -499,61 +437,44 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       case "AVAILABLE":
         return (
           <>
-            <div className="font-medium">{slot.startTime}</div>
-            <div className="text-xs">Available</div>
+            <span>{slot.startTime}</span>
+            <span className="text-[10px] font-normal opacity-80">Available</span>
           </>
         );
       
       case "BOOKED":
         return (
           <>
-            <div className="font-medium flex items-center justify-center gap-1">
+            <div className="flex items-center gap-1">
               {slot.bookingType === "physical" && <Store className="w-3 h-3" />}
-              {slot.startTime}
+              <span>{slot.startTime}</span>
             </div>
-            <div className="text-xs truncate">
+            <span className="text-[10px] font-normal opacity-80 truncate max-w-[90%]">
               {slot.customerName || "Booked"}
-            </div>
-            {slot.customerPhone && (
-              <div className="text-xs truncate">{slot.customerPhone}</div>
-            )}
+            </span>
           </>
         );
       
       case "BLOCKED":
         return (
           <>
-            <div className="font-medium">{slot.startTime}</div>
-            <div className="text-xs">Blocked</div>
-            {slot.reason && <div className="text-xs truncate">{slot.reason}</div>}
+            <span>{slot.startTime}</span>
+            <span className="text-[10px] font-normal opacity-80">Blocked</span>
           </>
         );
       
       case "HELD":
         return (
           <>
-            <div className="font-medium">{slot.startTime}</div>
-            <div className="text-xs">Held</div>
-          </>
-        );
-      
-      case "RESERVED":
-        return (
-          <>
-            <div className="font-medium">{slot.startTime}</div>
-            <div className="text-xs">Reserved</div>
-            {slot.note && <div className="text-xs truncate">{slot.note}</div>}
+            <span>{slot.startTime}</span>
+            <span className="text-[10px] font-normal opacity-80">Held</span>
           </>
         );
       
       default:
-        return slot.startTime;
+        return <span>{slot.startTime}</span>;
     }
   };
-
-  // ============================================================================
-  // Render
-  // ============================================================================
 
   if (loading) {
     return (
@@ -581,183 +502,185 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Week Navigation */}
-      <div className="flex items-center justify-between">
-        <Button onClick={handlePreviousWeek} variant="outline">
-          Previous Week
-        </Button>
-        
+      <div className="flex items-center justify-center bg-muted/30 p-2 rounded-lg">
         <div className="text-center">
-          <div className="font-semibold text-lg">
+          <div className="font-semibold">
             {currentWeekStart.toLocaleDateString("en-US", {
-              month: "long",
+              month: "short",
               day: "numeric",
-              year: "numeric",
-            })}{" "}
-            -{" "}
+            })}
+            {" - "}
             {getWeekEnd(currentWeekStart).toLocaleDateString("en-US", {
-              month: "long",
+              month: "short",
               day: "numeric",
               year: "numeric",
             })}
           </div>
         </div>
-        
-        <Button onClick={handleNextWeek} variant="outline">
-          Next Week
-        </Button>
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 text-xs flex-wrap items-center justify-between">
-        <div className="flex gap-4 flex-wrap">
-          <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
-            <span>Available</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded"></div>
-            <span>Booked (Website)</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded flex items-center justify-center">
-              <Store className="w-2 h-2 text-purple-800" />
-            </div>
-            <span>Booked (Physical)</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
-            <span>Blocked</span>
-          </div>
+      <div className="flex flex-wrap gap-4 text-xs justify-center p-4 bg-muted/20 rounded-lg">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
+          <span>Available</span>
         </div>
-        
-        {isManager && (
-          <div className="text-sm text-muted-foreground">
-            <p>Click available slot to book • Click blocked to unblock • Right-click for options</p>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-amber-100 border border-amber-300 rounded"></div>
+          <span>Booked</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-purple-100 border border-purple-300 rounded flex items-center justify-center">
+            <Store className="w-2 h-2 text-purple-800" />
           </div>
-        )}
+          <span>Physical</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-red-100 border border-red-300 rounded"></div>
+          <span>Blocked</span>
+        </div>
       </div>
 
-      {/* Slots Grid */}
-      <div className="grid grid-cols-7 gap-2">
-        {weekDates.map((date) => {
-          const dateString = formatDate(date);
-          const dateSlots = slotsByDate.get(dateString) || [];
+      {/* Slots Grid - Scrollable on mobile */}
+      <div className="overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="min-w-[800px] grid grid-cols-7 gap-3">
+          {weekDates.map((date) => {
+            const dateString = formatDate(date);
+            const dateSlots = slotsByDate.get(dateString) || [];
+            const isToday = formatDate(new Date()) === dateString;
 
-          return (
-            <div key={dateString} className="space-y-2">
-              <div className="font-semibold text-center text-sm p-2 bg-muted rounded">
-                {getDayLabel(date)}
-              </div>
-              
-              <div className="space-y-1">
-                {dateSlots.length === 0 ? (
-                  <div className="text-center text-xs text-muted-foreground p-4">
-                    No slots
-                  </div>
-                ) : (
-                  dateSlots.map((slot, idx) => (
-                    <div key={`${slot.date}_${slot.startTime}`} className="relative group">
-                      <div
-                        className={getSlotClassName(slot)}
-                        onClick={() => canClickSlot(slot) && handleSlotClick(slot)}
-                      >
-                        {getSlotContent(slot)}
-                      </div>
-                      {/* Manager block button on hover for available slots */}
-                      {isManager && slot.status === "AVAILABLE" && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenBlockDialog(slot);
-                          }}
-                          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 text-white text-xs px-1 rounded-bl"
-                          title="Block slot"
-                        >
-                          Block
-                        </button>
-                      )}
+            return (
+              <div key={dateString} className="space-y-3">
+                <div className={cn(
+                  "text-center p-2 rounded-lg border",
+                  isToday ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border"
+                )}>
+                  <div className="text-xs font-medium opacity-80">{date.toLocaleDateString("en-US", { weekday: "short" })}</div>
+                  <div className="text-lg font-bold">{date.getDate()}</div>
+                </div>
+                
+                <div className="space-y-2">
+                  {dateSlots.length === 0 ? (
+                    <div className="text-center text-xs text-muted-foreground py-8 bg-muted/10 rounded-lg border border-dashed">
+                      No slots
                     </div>
-                  ))
-                )}
+                  ) : (
+                    dateSlots.map((slot) => (
+                      <div key={`${slot.date}_${slot.startTime}`} className="relative group">
+                        <div
+                          className={getSlotClassName(slot)}
+                          onClick={() => canClickSlot(slot) && handleSlotClick(slot)}
+                        >
+                          {getSlotContent(slot)}
+                        </div>
+                        {/* Manager block button on hover for available slots */}
+                        {isManager && slot.status === "AVAILABLE" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenBlockDialog(slot);
+                            }}
+                            className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded shadow-sm z-10 hover:bg-destructive/90"
+                            title="Block slot"
+                          >
+                            Block
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* Booking Dialog */}
       <Dialog open={bookingDialogOpen} onOpenChange={setBookingDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {isManager ? "Create Physical Booking" : "Book Slot"}
+              {isManager ? "Create Physical Booking" : "Confirm Booking"}
             </DialogTitle>
             <DialogDescription>
-              {selectedSlot && (
-                <>
-                  {formatDate(new Date(selectedSlot.date))} at {selectedSlot.startTime}
-                </>
-              )}
+              {isManager ? "Enter customer details for this slot." : "Review your booking details before proceeding to payment."}
             </DialogDescription>
           </DialogHeader>
 
-          {isManager ? (
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="customerName">Customer Name *</Label>
-                <Input
-                  id="customerName"
-                  value={physicalBookingData.customerName}
-                  onChange={(e) =>
-                    setPhysicalBookingData({
-                      ...physicalBookingData,
-                      customerName: e.target.value,
-                    })
-                  }
-                  placeholder="Enter customer name"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="customerPhone">Customer Phone</Label>
-                <Input
-                  id="customerPhone"
-                  value={physicalBookingData.customerPhone}
-                  onChange={(e) =>
-                    setPhysicalBookingData({
-                      ...physicalBookingData,
-                      customerPhone: e.target.value,
-                    })
-                  }
-                  placeholder="Enter customer phone"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={physicalBookingData.notes}
-                  onChange={(e) =>
-                    setPhysicalBookingData({
-                      ...physicalBookingData,
-                      notes: e.target.value,
-                    })
-                  }
-                  placeholder="Additional notes"
-                  rows={3}
-                />
-              </div>
-            </div>
-          ) : (
+          {selectedSlot && (
             <div className="py-4">
-              <p>Click "Confirm" to proceed to payment.</p>
+              {isManager ? (
+                <div className="space-y-4">
+                  <div className="bg-muted/30 p-3 rounded-lg mb-4">
+                    <p className="text-sm font-medium">
+                      {formatDate(new Date(selectedSlot.date))} • {selectedSlot.startTime} - {selectedSlot.endTime}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="customerName">Customer Name *</Label>
+                    <Input
+                      id="customerName"
+                      value={physicalBookingData.customerName}
+                      onChange={(e) =>
+                        setPhysicalBookingData({
+                          ...physicalBookingData,
+                          customerName: e.target.value,
+                        })
+                      }
+                      placeholder="Enter customer name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="customerPhone">Customer Phone</Label>
+                    <Input
+                      id="customerPhone"
+                      value={physicalBookingData.customerPhone}
+                      onChange={(e) =>
+                        setPhysicalBookingData({
+                          ...physicalBookingData,
+                          customerPhone: e.target.value,
+                        })
+                      }
+                      placeholder="Enter customer phone"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes</Label>
+                    <Textarea
+                      id="notes"
+                      value={physicalBookingData.notes}
+                      onChange={(e) =>
+                        setPhysicalBookingData({
+                          ...physicalBookingData,
+                          notes: e.target.value,
+                        })
+                      }
+                      placeholder="Additional notes"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <BookingSummary
+                  venueName={venueDetails?.name || "Futsal Ground"}
+                  address={venueDetails?.address}
+                  date={formatDate(new Date(selectedSlot.date))}
+                  startTime={selectedSlot.startTime}
+                  endTime={selectedSlot.endTime}
+                  price={venueDetails?.pricePerHour || 1000}
+                  className="border-0 shadow-none bg-muted/10"
+                />
+              )}
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="outline"
               onClick={() => setBookingDialogOpen(false)}
@@ -770,7 +693,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
               disabled={isProcessing}
             >
               {isProcessing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Confirm
+              {isManager ? "Create Booking" : "Proceed to Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -790,8 +713,8 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
               <Label htmlFor="blockReason">Reason (Optional)</Label>
               <Textarea
                 id="blockReason"

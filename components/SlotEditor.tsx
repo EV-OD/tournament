@@ -1,10 +1,3 @@
-/**
- * SlotEditor - Refactored to use slotService
- * 
- * This component allows managers to configure slot settings
- * (start time, end time, duration, days of week) for their venue.
- */
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -57,10 +50,6 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
     timezone: "Asia/Kathmandu",
   });
 
-  // ============================================================================
-  // Load Current Configuration
-  // ============================================================================
-
   useEffect(() => {
     async function loadConfig() {
       setLoading(true);
@@ -83,10 +72,6 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
 
     loadConfig();
   }, [venueId]);
-
-  // ============================================================================
-  // Save Configuration
-  // ============================================================================
 
   const handleSaveConfig = async () => {
     // Validation
@@ -142,10 +127,6 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
     }
   };
 
-  // ============================================================================
-  // Helpers
-  // ============================================================================
-
   const toggleDay = (day: number) => {
     if (config.daysOfWeek.includes(day)) {
       setConfig({
@@ -168,10 +149,6 @@ export default function SlotEditor({ venueId }: SlotEditorProps) {
     const totalMinutes = endMinutes - startMinutes;
     return Math.floor(totalMinutes / config.slotDuration);
   };
-
-  // ============================================================================
-  // Render
-  // ============================================================================
 
   if (loading) {
     return (
