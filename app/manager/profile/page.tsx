@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Loader2, User, Mail, Shield, Lock, Key, AlertCircle } from "lucide-react";
+import Link from "next/link";
 
 export default function ManagerProfilePage() {
   const { user, loading: authLoading } = useAuth();
@@ -113,9 +114,17 @@ export default function ManagerProfilePage() {
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-gray-800">Access Denied</h2>
           <p className="text-gray-600">You must be logged in to view this page.</p>
+          <div className="flex justify-center gap-4">
+            <Link href="/auth/login/manager">
+              <Button>Manager Login</Button>
+            </Link>
+            <Link href="/">
+              <Button variant="outline">Go Home</Button>
+            </Link>
+          </div>
         </div>
       </div>
     );

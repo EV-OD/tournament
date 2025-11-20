@@ -31,11 +31,19 @@ const ManagerLayout = ({ children }: ManagerLayoutProps) => {
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-gray-800">
             Access Denied
           </h2>
           <p className="text-gray-600">You must be logged in as a manager.</p>
+          <div className="flex justify-center gap-4">
+            <Link href="/auth/login/manager">
+              <Button>Manager Login</Button>
+            </Link>
+            <Link href="/">
+              <Button variant="outline">Go Home</Button>
+            </Link>
+          </div>
         </div>
       </div>
     );

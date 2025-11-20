@@ -61,7 +61,7 @@ function AuthActionContent() {
       await applyActionCode(auth, oobCode);
       setStatus('success');
       toast.success("Email verified successfully!");
-      setTimeout(() => router.push('/user/login'), 3000);
+      setTimeout(() => router.push('/auth/login'), 3000);
     } catch (error) {
       console.error(error);
       setStatus('error');
@@ -91,7 +91,7 @@ function AuthActionContent() {
       await confirmPasswordReset(auth, oobCode, newPassword);
       setStatus('success');
       toast.success("Password has been reset successfully!");
-      setTimeout(() => router.push('/user/login'), 3000);
+      setTimeout(() => router.push('/auth/login'), 3000);
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Failed to reset password");
@@ -127,7 +127,7 @@ function AuthActionContent() {
               {mode === 'resetPassword' ? 'Your password has been updated.' : 'Your email has been verified.'}
             </p>
             <p className="text-sm text-gray-400 mt-4">Redirecting to login...</p>
-            <Button className="mt-4 w-full" onClick={() => router.push('/user/login')}>
+            <Button className="mt-4 w-full" onClick={() => router.push('/auth/login')}>
               Go to Login
             </Button>
           </CardContent>
@@ -145,7 +145,7 @@ function AuthActionContent() {
             <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-gray-900">Action Failed</h2>
             <p className="text-gray-500 mt-2">{errorMessage}</p>
-            <Button className="mt-4 w-full" onClick={() => router.push('/user/login')}>
+            <Button className="mt-4 w-full" onClick={() => router.push('/auth/login')}>
               Back to Login
             </Button>
           </CardContent>
