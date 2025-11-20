@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { Trophy } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -61,7 +61,17 @@ export default function AuthPageLayout({
 
         {/* Form Container - Centered */}
         <div className="flex flex-1 items-center justify-center">
-          <div className="w-full max-w-sm">{children}</div>
+          <div className="w-full max-w-sm">
+            <Suspense
+              fallback={
+                <div className="w-full">
+                  <div className="h-6 w-full rounded bg-muted animate-pulse" />
+                </div>
+              }
+            >
+              {children}
+            </Suspense>
+          </div>
         </div>
 
         {/* Role switcher component at bottom of left column */}

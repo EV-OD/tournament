@@ -35,7 +35,7 @@ type Booking = {
   createdAt?: string | { seconds?: number; nanoseconds?: number };
 };
 
-export default function AdminBookingsPage(): JSX.Element {
+export default function AdminBookingsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [bookings, setBookings] = useState<Booking[]>([]);
 

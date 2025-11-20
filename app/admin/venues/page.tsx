@@ -48,7 +48,7 @@ type Venue = {
   createdAt?: any;
 };
 
-export default function AdminVenuesPage(): JSX.Element {
+export default function AdminVenuesPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [venues, setVenues] = useState<Venue[]>([]);
 

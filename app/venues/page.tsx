@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { collection, getDocs, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -450,16 +450,32 @@ const VenuesPage = () => {
         `}
         >
           <div className="p-4 flex-shrink-0">
-            <VenueFilter
-              allVenues={allVenues}
-              setFilteredVenues={setFilteredVenues}
-            />
+            <Suspense
+              fallback={
+                <div className="w-full">
+                  <div className="h-6 w-full rounded bg-muted animate-pulse" />
+                </div>
+              }
+            >
+              <VenueFilter
+                allVenues={allVenues}
+                setFilteredVenues={setFilteredVenues}
+              />
+            </Suspense>
           </div>
           <div className="flex-1 overflow-hidden px-4 flex flex-col">
-            <VenueResultList
-              venues={filteredVenues}
-              setSelectedVenue={handleSetSelectedVenue}
-            />
+            <Suspense
+              fallback={
+                <div className="w-full">
+                  <div className="h-6 w-full rounded bg-muted animate-pulse" />
+                </div>
+              }
+            >
+              <VenueResultList
+                venues={filteredVenues}
+                setSelectedVenue={handleSetSelectedVenue}
+              />
+            </Suspense>
           </div>
         </div>
 

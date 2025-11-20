@@ -51,7 +51,7 @@ type UserDoc = {
   disabled?: boolean;
 };
 
-export default function AdminUsersPage(): JSX.Element {
+export default function AdminUsersPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [users, setUsers] = useState<UserDoc[]>([]);
   const [queryText, setQueryText] = useState<string>("");
@@ -204,8 +204,8 @@ export default function AdminUsersPage(): JSX.Element {
                     const created =
                       typeof u.createdAt === "string"
                         ? u.createdAt
-                        : u.createdAt && "seconds" in u.createdAt
-                        ? new Date(u.createdAt.seconds * 1000).toLocaleString()
+                        : u.createdAt && typeof (u.createdAt as { seconds?: number }).seconds === "number"
+                        ? new Date((u.createdAt as { seconds: number }).seconds * 1000).toLocaleString()
                         : "—";
 
                     return (
