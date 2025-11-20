@@ -186,9 +186,24 @@ const LocationPicker = ({
           <Button onClick={handleSearch} variant="outline" disabled={isSearching}>
             {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
           </Button>
-          <Button onClick={handleGetCurrentLocation} variant="outline" size="icon">
-            <Navigation className="w-4 h-4" />
-          </Button>
+        </div>
+        
+        <div className="flex flex-col gap-2 p-4 bg-muted/50 rounded-lg border border-dashed">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="space-y-1">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-primary" />
+                Auto-Detect Location
+              </h4>
+              <p className="text-xs text-muted-foreground max-w-[300px]">
+                Click the button to automatically set the map marker to your current physical location using GPS.
+              </p>
+            </div>
+            <Button onClick={handleGetCurrentLocation} variant="secondary" className="flex items-center gap-2">
+              <Navigation className="w-4 h-4" />
+              Use My Current Location
+            </Button>
+          </div>
         </div>
 
         {/* Search Results List */}

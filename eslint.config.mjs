@@ -19,6 +19,12 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
     ],
+    ...compat.config({
+      rules: {
+        "@typescript-eslint/no-explicit-any": "error"
+
+      },
+    }),
   },
 ];
 

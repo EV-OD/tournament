@@ -209,11 +209,11 @@ const AddGround = ({
 
   return (
     <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Venue</DialogTitle>
-          <DialogDescription>
-            Add a new venue with location and slot configuration
+          <DialogTitle className="text-2xl">Create New Venue</DialogTitle>
+          <DialogDescription className="text-base">
+            Add a new venue with location and slot configuration. Fill in all the details below.
           </DialogDescription>
         </DialogHeader>
 

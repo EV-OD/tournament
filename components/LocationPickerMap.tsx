@@ -61,7 +61,7 @@ const LocationPickerMap = ({
   setPosition,
 }: LocationPickerMapProps) => {
   return (
-    <div className="w-full h-[400px] rounded-lg overflow-hidden border-2 border-gray-200">
+    <div className="w-full h-[400px] rounded-lg overflow-hidden border-2 border-gray-200 shadow-inner">
       <MapContainer
         center={[currentLat, currentLng]}
         zoom={15}
