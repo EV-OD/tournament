@@ -62,12 +62,12 @@ export function LoginForm({
 
         // Redirect based on role:
         // - regular users -> `next` (default: "/")
-        // - managers -> "/dashboard"
+        // - managers -> "/manager/dashboard"
         // - admins -> "/admin"
         if (role === "user") {
           router.replace(next);
         } else if (role === "manager") {
-          router.replace("/dashboard");
+          router.replace("/manager/dashboard");
         } else if (role === "admin") {
           router.replace("/admin");
         } else {
@@ -143,7 +143,11 @@ export function LoginForm({
     }
     setResetLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email);
+      const actionCodeSettings = {
+        url: `${window.location.origin}/auth/action`,
+        handleCodeInApp: true,
+      };
+      await sendPasswordResetEmail(auth, email, actionCodeSettings);
       toast.success("Password reset email sent. Check your inbox.");
     } catch (err: any) {
       console.error("Password reset error:", err);

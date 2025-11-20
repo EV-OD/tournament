@@ -45,7 +45,7 @@ const VenueClient = ({ id }: VenueClientProps) => {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 pt-24 pb-8">
         <div className="space-y-8">
           <Skeleton className="h-96 w-full rounded-lg" />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -59,7 +59,7 @@ const VenueClient = ({ id }: VenueClientProps) => {
 
   if (error || !venue) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 pt-24 pb-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900">
             {error || "Venue not found"}
@@ -74,7 +74,7 @@ const VenueClient = ({ id }: VenueClientProps) => {
     user && role === "manager" && venue.managedBy === user.uid;
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 pt-24 pb-8">
       {isManagerOfVenue ? (
         <ManagerPanel venue={venue} />
       ) : (

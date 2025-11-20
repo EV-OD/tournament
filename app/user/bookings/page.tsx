@@ -700,7 +700,7 @@ const UserBookingsPage = () => {
   );
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="container mx-auto px-4 pt-24 pb-8 max-w-7xl">
       {/* Pending Payment Section */}
       {pendingPayment.length > 0 && (
         <div className="mb-10">

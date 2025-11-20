@@ -73,7 +73,7 @@ export default function Auth() {
 
         {role === "user" && (
           <DropdownMenuItem asChild>
-            <Link href="/profile">Profile</Link>
+            <Link href="/user/profile">Profile</Link>
           </DropdownMenuItem>
         )}
 

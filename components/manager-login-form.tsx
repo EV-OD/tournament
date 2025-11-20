@@ -30,7 +30,7 @@ import { mapAuthError } from "@/lib/auth";
 /**
  * Manager Login form with email/password + Google
  * - After successful sign-in we check that a users/{uid} document exists and role is manager.
- * - If the user document exists and role is manager, redirect to `next` (or /dashboard).
+ * - If the user document exists and role is manager, redirect to `next` (or /manager/dashboard).
  * - If it does not exist or wrong role, sign the user out and redirect to /register/manager with email prefilled.
  */
 export function ManagerLoginForm({
@@ -44,7 +44,7 @@ export function ManagerLoginForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-  const next = searchParams?.get("next") ?? "/";
+  const next = searchParams?.get("next") ?? "/manager/dashboard";
 
   // Inline field errors for better UX
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -146,7 +146,11 @@ export function ManagerLoginForm({
     }
     setResetLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email);
+      const actionCodeSettings = {
+        url: `${window.location.origin}/auth/action`,
+        handleCodeInApp: true,
+      };
+      await sendPasswordResetEmail(auth, email, actionCodeSettings);
       toast.success("Password reset email sent. Check your inbox.");
     } catch (err: any) {
       console.error("Password reset error:", err);

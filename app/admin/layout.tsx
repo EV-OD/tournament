@@ -20,6 +20,7 @@ import { Home, Calendar, MapPin, Users, Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { Logo } from "@/components/Logo";
 
 /**
  * Minimal, professional Admin layout
@@ -67,20 +68,7 @@ export default function AdminLayout({
             <Sidebar>
               <SidebarHeader>
                 <div className="px-4 py-5">
-                  <Link
-                    href="/admin/overview"
-                    className="flex items-center gap-3"
-                  >
-                    <div className="bg-primary text-primary-foreground rounded-md p-2">
-                      <Home className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold">Futsal Admin</div>
-                      <div className="text-xs text-muted-foreground">
-                        Control panel
-                      </div>
-                    </div>
-                  </Link>
+                  <Logo />
                 </div>
               </SidebarHeader>
 

@@ -254,7 +254,7 @@ export default function AdminPanel() {
 
   // Main dashboard UI - stripped sidebar and guard so this file provides only the main content
   return (
-    <main className="min-h-screen p-6">
+    <main className="min-h-screen pt-24 pb-8 px-6">
       <div>
         <div className="flex items-center justify-between mb-6">
           <div>

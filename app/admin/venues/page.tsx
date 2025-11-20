@@ -160,7 +160,7 @@ export default function AdminVenuesPage(): JSX.Element {
   };
 
   return (
-    <div>
+    <div className="pt-24 pb-8 px-6">
       <Card>
         <CardHeader>
           <CardTitle>Venues</CardTitle>

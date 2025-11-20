@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { collection, getDocs, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import Link from "next/link";
@@ -21,8 +22,23 @@ const PublicVenueMap = dynamic(() => import("@/components/PublicVenueMap"), {
   ssr: false,
 });
 
-const VenueFilter = ({ setFilteredVenues, allVenues }) => {
-  const [searchTerm, setSearchTerm] = useState("");
+interface Venue {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  pricePerHour?: number;
+  averageRating?: number;
+  reviewCount?: number;
+  [key: string]: any;
+}
+
+const VenueFilter = ({ setFilteredVenues, allVenues }: { setFilteredVenues: (venues: Venue[]) => void; allVenues: Venue[] }) => {
+  const searchParams = useSearchParams();
+  const urlSearch = searchParams.get("search");
+  
+  const [searchTerm, setSearchTerm] = useState(urlSearch || "");
   const [showFilters, setShowFilters] = useState(false);
   
   // Temporary filter values (before applying)
@@ -50,6 +66,13 @@ const VenueFilter = ({ setFilteredVenues, allVenues }) => {
     setMinPrice("");
     setMaxPrice("");
   };
+
+  // Update search term when URL param changes
+  useEffect(() => {
+    if (urlSearch) {
+      setSearchTerm(urlSearch);
+    }
+  }, [urlSearch]);
 
   useEffect(() => {
     let filtered = allVenues;
@@ -214,7 +237,7 @@ const VenueFilter = ({ setFilteredVenues, allVenues }) => {
   );
 };
 
-const VenueResultList = ({ venues, setSelectedVenue }) => {
+const VenueResultList = ({ venues, setSelectedVenue }: { venues: Venue[]; setSelectedVenue: (venue: Venue) => void }) => {
   return (
     <div className="space-y-4 flex-1 overflow-y-auto">
       <div className="sticky top-0 bg-background py-2 z-10 border-b">
@@ -236,7 +259,7 @@ const VenueResultList = ({ venues, setSelectedVenue }) => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">{venue.name}</CardTitle>
                 <div className="flex items-center pt-1">
-                  {venue.averageRating > 0 ? (
+                  {venue.averageRating && venue.averageRating > 0 ? (
                     <>
                       <div className="flex items-center">
                         {[...Array(Math.floor(venue.averageRating))].map((_, i) => (
@@ -289,9 +312,9 @@ const VenueResultList = ({ venues, setSelectedVenue }) => {
 };
 
 const VenuesPage = () => {
-  const [allVenues, setAllVenues] = useState([]);
-  const [filteredVenues, setFilteredVenues] = useState([]);
-  const [selectedVenue, setSelectedVenue] = useState(null);
+  const [allVenues, setAllVenues] = useState<Venue[]>([]);
+  const [filteredVenues, setFilteredVenues] = useState<Venue[]>([]);
+  const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
     null,
   );
@@ -328,7 +351,7 @@ const VenuesPage = () => {
     const fetchVenuesAndRatings = async () => {
       const venuesCollection = await getDocs(collection(db, "venues"));
       const venuesData = venuesCollection.docs.map((doc) => {
-        return { id: doc.id, ...doc.data() };
+        return { id: doc.id, ...doc.data() } as Venue;
       });
       setAllVenues(venuesData);
       setFilteredVenues(venuesData);
@@ -337,7 +360,7 @@ const VenuesPage = () => {
     fetchVenuesAndRatings();
   }, []);
 
-  const handleSetSelectedVenue = (venue) => {
+  const handleSetSelectedVenue = (venue: Venue) => {
     setSelectedVenue(venue);
     setMapCenter([venue.latitude, venue.longitude]);
     setMapZoom(16);
@@ -346,7 +369,7 @@ const VenuesPage = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-100px)] w-screen p-3 md:p-5 overflow-hidden">
+    <div className="flex flex-col h-screen w-screen overflow-hidden pt-20 pb-4">
       {/* Location Banner */}
       {showLocationBanner && (
         <LocationPermissionBanner
@@ -357,7 +380,7 @@ const VenuesPage = () => {
       )}
 
       {/* Mobile View Toggle */}
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 px-3 py-2 md:px-5 md:py-2 border-b bg-background">
         <div className="md:hidden flex gap-2 flex-1">
           <Button
             variant={mobileView === "list" ? "default" : "outline"}
@@ -378,17 +401,6 @@ const VenuesPage = () => {
             Map
           </Button>
         </div>
-        {!userLocation && (
-          <Button
-            onClick={() => setShowLocationBanner(true)}
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-          >
-            <MapPin className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Use My Location</span>
-          </Button>
-        )}
       </div>
 
       <div className="flex flex-1 overflow-hidden">

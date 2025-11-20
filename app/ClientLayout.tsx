@@ -14,13 +14,19 @@ export default function ClientLayout({
   const isAuthPage =
     pathname?.startsWith("/auth/login") ||
     pathname?.startsWith("/auth/register");
+  
+  // Hide header for admin and manager dashboard routes (they have their own sidebars)
+  const hideHeader = 
+    isAuthPage ||
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/manager");
 
   return (
     <AuthProvider>
       {/* Global toaster for notifications */}
       <Toaster />
-      {/* Header is hidden on auth pages */}
-      <Header />
+      {/* Header is hidden on auth pages, admin, and manager routes */}
+      {!hideHeader && <Header />}
       {/* Main app container — full height for auth pages, container for others */}
       <main className={isAuthPage ? "min-h-screen" : ""}>{children}</main>
     </AuthProvider>
