@@ -370,7 +370,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   };
 
   const getSlotClassName = (slot: ReconstructedSlot): string => {
-    const baseClasses = "relative h-14 rounded-lg border text-sm font-medium transition-all duration-200 flex flex-col items-center justify-center gap-0.5 overflow-hidden";
+    const baseClasses = "relative h-12 sm:h-14 rounded-lg border text-xs sm:text-sm font-medium transition-all duration-200 flex flex-col items-center justify-center gap-0.5 overflow-hidden";
     
     const clickable = canClickSlot(slot);
     const hoverClasses = clickable
@@ -473,9 +473,9 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
   return (
     <div className="space-y-6">
       {/* Week Navigation */}
-      <div className="flex items-center justify-center bg-muted/30 p-2 rounded-lg">
+      <div className="flex items-center justify-center bg-muted/30 p-3 sm:p-2 rounded-lg">
         <div className="text-center">
-          <div className="font-semibold">
+          <div className="text-sm sm:text-base font-semibold">
             {currentWeekStart.toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
@@ -491,7 +491,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-xs justify-center p-4 bg-muted/20 rounded-lg">
+      <div className="flex flex-wrap gap-3 sm:gap-4 text-xs justify-center p-3 sm:p-4 bg-muted/20 rounded-lg">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
           <span>Available</span>
@@ -513,8 +513,8 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
       </div>
 
       {/* Slots Grid - Scrollable on mobile */}
-      <div className="overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="min-w-[800px] grid grid-cols-7 gap-3">
+      <div className="overflow-x-auto pb-4 -mx-2 px-2 sm:-mx-4 sm:px-4 md:mx-0 md:px-0">
+        <div className="min-w-[640px] sm:min-w-[800px] grid grid-cols-7 gap-2 sm:gap-3">
           {weekDates.map((date) => {
             const dateString = formatDate(date);
             const dateSlots = slotsByDate.get(dateString) || [];
@@ -523,11 +523,11 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
             return (
               <div key={dateString} className="space-y-3">
                 <div className={cn(
-                  "text-center p-2 rounded-lg border",
+                  "text-center p-1.5 sm:p-2 rounded-lg border",
                   isToday ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border"
                 )}>
-                  <div className="text-xs font-medium opacity-80">{date.toLocaleDateString("en-US", { weekday: "short" })}</div>
-                  <div className="text-lg font-bold">{date.getDate()}</div>
+                  <div className="text-[10px] sm:text-xs font-medium opacity-80">{date.toLocaleDateString("en-US", { weekday: "short" })}</div>
+                  <div className="text-base sm:text-lg font-bold">{date.getDate()}</div>
                 </div>
                 
                 <div className="space-y-2">
