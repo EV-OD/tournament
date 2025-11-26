@@ -41,7 +41,7 @@ const ManagerBookingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [venueId, setVenueId] = useState<string | null>(null);
+  const [venueIds, setVenueIds] = useState<string[]>([]);
   const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const bookingRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -65,18 +65,26 @@ const ManagerBookingsPage = () => {
       }
 
       setHasVenueAccess(true);
-      const managerVenueId = venueSnapshot.docs[0].id;
-      setVenueId(managerVenueId);
+      // Collect all venue IDs managed by this manager
+      const managerVenueIds = venueSnapshot.docs.map((d) => d.id);
+      setVenueIds(managerVenueIds);
 
-      const bookingsQuery = query(
-        collection(db, "bookings"),
-        where("venueId", "==", managerVenueId),
-      );
-      const bookingsSnapshot = await getDocs(bookingsQuery);
-      const bookingsData = bookingsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // Fetch bookings for all venues managed by this manager.
+      // Firestore 'in' operator accepts up to 10 values, so chunk if needed.
+      const bookingsData: any[] = [];
+      const chunks: string[][] = [];
+      for (let i = 0; i < managerVenueIds.length; i += 10) {
+        chunks.push(managerVenueIds.slice(i, i + 10));
+      }
+
+      for (const chunk of chunks) {
+        const bookingsQuery = query(
+          collection(db, "bookings"),
+          where("venueId", "in", chunk),
+        );
+        const bookingsSnapshot = await getDocs(bookingsQuery);
+        bookingsSnapshot.docs.forEach((d) => bookingsData.push({ id: d.id, ...d.data() }));
+      }
 
       // Fetch user details for online bookings
       const onlineBookings = bookingsData.filter(b => b.bookingType !== "physical" && b.userId);
