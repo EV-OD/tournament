@@ -69,6 +69,13 @@ const ManagerBookingsPage = () => {
       const managerVenueIds = venueSnapshot.docs.map((d) => d.id);
       setVenueIds(managerVenueIds);
 
+      // Build a map of venueId -> venue data (name etc.) for display
+      const venuesMap = new Map<string, any>();
+      venueSnapshot.docs.forEach((d) => {
+        const data = d.data() as any;
+        venuesMap.set(d.id, { name: data.name || "Unnamed Venue", address: data.address || null });
+      });
+
       // Fetch bookings for all venues managed by this manager.
       // Firestore 'in' operator accepts up to 10 values, so chunk if needed.
       const bookingsData: any[] = [];
@@ -132,6 +139,7 @@ const ManagerBookingsPage = () => {
           ...booking,
           displayName,
           contact,
+          venueName: venuesMap.get(booking.venueId)?.name || "Unknown Venue",
         };
       });
 
@@ -307,10 +315,11 @@ const ManagerBookingsPage = () => {
                       <div className="flex justify-between items-start">
                         <div className="font-medium">
                           <div className="flex flex-col">
-                            <span>{booking.displayName}</span>
-                            {booking.contact && (
-                              <span className="text-xs text-muted-foreground">{booking.contact}</span>
-                            )}
+                              <span>{booking.displayName}</span>
+                              {booking.contact && (
+                                <span className="text-xs text-muted-foreground">{booking.contact}</span>
+                              )}
+                              <span className="text-xs text-muted-foreground">{booking.venueName}</span>
                           </div>
                         </div>
                         {getStatusBadge(booking.status)}
@@ -362,6 +371,7 @@ const ManagerBookingsPage = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
+                      <TableHead>Venue</TableHead>
                       <TableHead>Date & Time</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Status</TableHead>
@@ -391,6 +401,9 @@ const ManagerBookingsPage = () => {
                                 <span className="text-xs text-muted-foreground">{booking.contact}</span>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-muted-foreground">{booking.venueName}</div>
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-col">

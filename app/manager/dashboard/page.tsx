@@ -50,7 +50,7 @@ const ManagerDashboardPage = () => {
   const [recentBookings, setRecentBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
-  const [venueId, setVenueId] = useState<string | null>(null);
+  const [venueIds, setVenueIds] = useState<string[]>([]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -87,23 +87,29 @@ const ManagerDashboardPage = () => {
       }
 
       setHasVenueAccess(true);
-      const managerVenueId = venueSnapshot.docs[0].id;
-      setVenueId(managerVenueId);
 
-      // Get venue data for commission percentage
-      const venueData = venueSnapshot.docs[0].data();
-      const commissionPercentage = getVenueCommission(venueData);
+      // Collect all venues managed by this manager
+      const managerVenueIds = venueSnapshot.docs.map((d) => d.id);
+      setVenueIds(managerVenueIds);
 
-      const bookingsQuery = query(
-        collection(db, "bookings"),
-        where("venueId", "==", managerVenueId),
-      );
-      const bookingsSnapshot = await getDocs(bookingsQuery);
-      const allBookings = bookingsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // Build a map of venue data for commission and display
+      const venuesMap = new Map<string, any>();
+      venueSnapshot.docs.forEach((d) => venuesMap.set(d.id, d.data()));
 
+      // Fetch bookings for all venues (chunked for `in` query limit)
+      const allBookings: any[] = [];
+      for (let i = 0; i < managerVenueIds.length; i += 10) {
+        const chunk = managerVenueIds.slice(i, i + 10);
+        const bookingsQuery = query(
+          collection(db, "bookings"),
+          where("venueId", "in", chunk),
+        );
+        const bookingsSnapshot = await getDocs(bookingsQuery);
+        bookingsSnapshot.docs.forEach((doc) => allBookings.push({ id: doc.id, ...doc.data() }));
+      }
+
+      // Aggregate stats across all venues and compute commission per-venue
+      const revenueByVenue = new Map<string, number>();
       let totalRevenue = 0;
       let activeBookings = 0;
       let pendingBookings = 0;
@@ -111,40 +117,52 @@ const ManagerDashboardPage = () => {
       let onlineBookings = 0;
 
       allBookings.forEach((booking: any) => {
-        const status = booking.status?.toLowerCase();
-        
-        if (status === "confirmed") {
-          // Only count revenue for online bookings or if amount is explicitly set
-          // Physical bookings usually have 0 amount in this system unless manually tracked
-          if (booking.amount) {
-            totalRevenue += Number(booking.amount);
-          }
-          activeBookings++;
+        const status = (booking.status || "").toLowerCase();
 
-          if (booking.bookingType === "physical") {
+        if (status === "confirmed" || status === "completed") {
+          const amount = Number(booking.amount || booking.price || 0) || 0;
+          // Count revenue only when amount is present
+          totalRevenue += amount;
+
+          // Sum per-venue revenue
+          const prev = revenueByVenue.get(booking.venueId) || 0;
+          revenueByVenue.set(booking.venueId, prev + amount);
+
+          activeBookings++;
+          if ((booking.bookingType || "").toLowerCase() === "physical") {
             physicalBookings++;
           } else {
             onlineBookings++;
           }
         }
-        
+
         if (status === "pending_payment") {
           pendingBookings++;
         }
       });
 
-      setStats({ 
-        totalRevenue, 
-        activeBookings, 
+      // Commission: calculate per-venue and sum
+      let totalCommissionAmount = 0;
+      let totalNetRevenue = 0;
+      revenueByVenue.forEach((venueGross, vid) => {
+        const vData = venuesMap.get(vid) || {};
+        const pct = getVenueCommission(vData) || 0;
+        const c = calculateCommission(venueGross, pct);
+        totalCommissionAmount += c.commissionAmount;
+        totalNetRevenue += c.netRevenue;
+      });
+
+      setStats({
+        totalRevenue,
+        activeBookings,
         pendingBookings,
         physicalBookings,
         onlineBookings,
-        commissionPercentage,
-        commissionAmount: calculateCommission(totalRevenue, commissionPercentage).commissionAmount,
-        netRevenue: calculateCommission(totalRevenue, commissionPercentage).netRevenue,
+        commissionPercentage: 0, // multiple venues; not a single pct
+        commissionAmount: totalCommissionAmount,
+        netRevenue: totalNetRevenue,
       });
 
-      // Sort by date and time (descending)
       const sortedBookings = allBookings.sort(
         (a: any, b: any) =>
           new Date(b.date + "T" + b.startTime).getTime() -
@@ -185,7 +203,14 @@ const ManagerDashboardPage = () => {
           <p className="text-muted-foreground">Overview of your venue's performance</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => router.push(`/venue/${venueId}`)} variant="outline">
+          <Button
+            onClick={() => {
+              const firstVenueId = venueIds && venueIds.length > 0 ? venueIds[0] : null;
+              if (firstVenueId) router.push(`/venue/${firstVenueId}`);
+            }}
+            variant="outline"
+            disabled={!venueIds || venueIds.length === 0}
+          >
             <Store className="mr-2 h-4 w-4" />
           </Button>
         </div>
