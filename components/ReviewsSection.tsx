@@ -1,17 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  collection,
-  getDocs,
-  query,
-  orderBy,
-  addDoc,
-  doc,
-  setDoc,
-  serverTimestamp,
-  runTransaction,
-} from "firebase/firestore";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -49,15 +39,63 @@ const ReviewsSection = ({ venueId }: ReviewsSectionProps) => {
     const fetchComments = async () => {
       try {
         setIsLoading(true);
-        const q = query(
+        // Fetch comments subcollection (public display comments)
+        const commentsQuery = query(
           collection(db, `venues/${venueId}/comments`),
           orderBy("createdAt", "desc")
         );
-        const querySnapshot = await getDocs(q);
-        const commentsList = querySnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as Comment)
+        const commentsSnapshot = await getDocs(commentsQuery);
+        const commentsList = commentsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Comment));
+
+        // Also fetch legacy/alternative reviews documents stored in `reviews` collection
+        // Some entries may exist only in `reviews/{venueId_userId}` and not in the comments subcollection.
+        // We'll include them in the UI by normalizing their shape.
+        const reviewsQuery = query(
+          collection(db, "reviews"),
+          orderBy("createdAt", "desc")
         );
-        setComments(commentsList);
+        const reviewsSnapshot = await getDocs(reviewsQuery);
+        const reviewsForVenue = reviewsSnapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() } as any))
+          .filter((r) => r.venueId === venueId)
+          .map((r) => {
+            // Normalize createdAt: Firestore Timestamps have toDate(), otherwise use string
+            let createdAtStr = '';
+            if (r.createdAt && typeof r.createdAt.toDate === 'function') {
+              createdAtStr = r.createdAt.toDate().toISOString();
+            } else if (typeof r.createdAt === 'string') {
+              createdAtStr = r.createdAt;
+            } else if (r.createdAt && r.createdAt._seconds) {
+              // possible server timestamp shape
+              createdAtStr = new Date(r.createdAt._seconds * 1000).toISOString();
+            } else {
+              createdAtStr = new Date().toISOString();
+            }
+
+            return {
+              id: r.id,
+              text: r.comment || r.commentText || '',
+              author: r.userName || r.author || 'Anonymous',
+              role: r.role || 'user',
+              rating: r.rating,
+              createdAt: createdAtStr,
+            } as Comment;
+          });
+
+        // Merge and dedupe by a combination of id and author
+        const merged = [...reviewsForVenue, ...commentsList];
+        const seen = new Set();
+        const deduped = merged.filter((c) => {
+          const key = `${c.id}:${c.author}:${c.createdAt}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        // Sort by createdAt desc
+        deduped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        setComments(deduped as Comment[]);
       } catch (error) {
         console.error("Error fetching comments:", error);
       } finally {
@@ -86,66 +124,43 @@ const ReviewsSection = ({ venueId }: ReviewsSectionProps) => {
 
     try {
       setIsSubmitting(true);
-      
-      await runTransaction(db, async (transaction) => {
-        // 1. Create references
-        const venueRef = doc(db, "venues", venueId);
-        const commentRef = doc(collection(db, `venues/${venueId}/comments`));
-        const reviewRef = doc(db, "reviews", `${venueId}_${user.uid}`);
-
-        // 2. Read current venue data
-        const venueDoc = await transaction.get(venueRef);
-        if (!venueDoc.exists()) {
-          throw "Venue does not exist!";
-        }
-
-        const venueData = venueDoc.data();
-        const currentRating = venueData.averageRating || 0;
-        const currentCount = venueData.reviewCount || 0;
-
-        // 3. Calculate new stats
-        // New Average = ((Old Average * Old Count) + New Rating) / (Old Count + 1)
-        const newCount = currentCount + 1;
-        const newAverage = ((currentRating * currentCount) + rating) / newCount;
-        const roundedAverage = Math.round(newAverage * 10) / 10;
-
-        // 4. Prepare data
-        const commentData = {
-          text: newComment,
-          author: user.displayName || user.email || "Anonymous",
-          role: role || "user",
-          rating: rating,
-          createdAt: new Date().toISOString(),
-        };
-
-        const reviewData = {
-          venueId: venueId,
-          userId: user.uid,
-          rating: rating,
-          comment: newComment,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-
-        // 5. Perform writes
-        transaction.set(commentRef, commentData);
-        transaction.set(reviewRef, reviewData, { merge: true });
-        transaction.update(venueRef, {
-          averageRating: roundedAverage,
-          reviewCount: newCount,
-        });
-
-        setComments((prev) => [{ id: commentRef.id, ...commentData }, ...prev]);
+      const token = await user.getIdToken();
+      const resp = await fetch(`/api/venues/${venueId}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ rating, comment: newComment }),
       });
 
-      setNewComment("");
+      if (!resp.ok) {
+        const json = await resp.json().catch(() => ({}));
+        console.error('Create review API failed:', json);
+        toast.error(json?.error || 'Failed to add review');
+        return;
+      }
+
+      // Optimistic UI update
+      setComments((prev) => [
+        {
+          id: `temp_${Date.now()}`,
+          text: newComment,
+          author: user.displayName || user.email || 'Anonymous',
+          role: role || 'user',
+          rating,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+
+      setNewComment('');
       setRating(0);
       setHoverRating(0);
-      toast.success("Review posted successfully");
-   
+      toast.success('Review posted successfully');
     } catch (error) {
-      console.error("Error adding comment:", error);
-      toast.error("Failed to add review");
+      console.error('Error adding comment:', error);
+      toast.error('Failed to add review');
     } finally {
       setIsSubmitting(false);
     }

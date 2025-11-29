@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { doc, setDoc, serverTimestamp, runTransaction, collection } from "firebase/firestore";
+import { doc, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,63 +39,41 @@ const RatingModal = ({
 
   const handleRating = async () => {
     try {
-      await runTransaction(db, async (transaction) => {
-        // 1. Create references
-        const venueRef = doc(db, "venues", venueId);
-        const reviewRef = doc(db, "reviews", `${venueId}_${userId}`);
-        const bookingRef = doc(db, "bookings", bookingId);
-        
-        // Also add to comments subcollection for visibility in ReviewsSection
-        const commentRef = doc(collection(db, `venues/${venueId}/comments`));
+      const token = await (window as any)?.firebaseAuth?.currentUser?.getIdToken?.() || null;
+      // If AuthContext is available in this component, prefer that; otherwise try window firebase
+      let idToken = token;
+      if (!idToken && (window as any).firebase && (window as any).firebase.auth) {
+        idToken = await (window as any).firebase.auth().currentUser.getIdToken();
+      }
 
-        // 2. Read current venue data
-        const venueDoc = await transaction.get(venueRef);
-        if (!venueDoc.exists()) {
-          throw "Venue does not exist!";
-        }
+      if (!idToken) {
+        // Fallback: try to access from local storage or fail
+        try {
+          const u = await fetch('/api/auth/me');
+        } catch (e) {}
+      }
 
-        const venueData = venueDoc.data();
-        const currentRating = venueData.averageRating || 0;
-        const currentCount = venueData.reviewCount || 0;
-
-        // 3. Calculate new stats
-        const newCount = currentCount + 1;
-        const newAverage = ((currentRating * currentCount) + rating) / newCount;
-        const roundedAverage = Math.round(newAverage * 10) / 10;
-
-        // 4. Prepare data
-        const reviewData = {
-          venueId,
-          userId,
-          rating,
-          comment: review,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-        
-        const commentData = {
-          text: review,
-          author: "Verified User", // We might want to fetch user name if available, but "Verified User" is safe
-          role: "user",
-          rating: rating,
-          createdAt: new Date().toISOString(),
-        };
-
-        // 5. Perform writes
-        transaction.set(reviewRef, reviewData, { merge: true });
-        transaction.set(commentRef, commentData);
-        transaction.update(bookingRef, { rated: true });
-        transaction.update(venueRef, {
-          averageRating: roundedAverage,
-          reviewCount: newCount,
-        });
+      const resp = await fetch(`/api/venues/${venueId}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: idToken ? `Bearer ${idToken}` : '',
+        },
+        body: JSON.stringify({ rating, comment: review, bookingId }),
       });
 
-      toast.success("Thank you for your feedback!");
+      if (!resp.ok) {
+        const json = await resp.json().catch(() => ({}));
+        console.error('Rating API failed:', json);
+        toast.error(json?.error || 'Failed to submit your rating. Please try again.');
+        return;
+      }
+
+      toast.success('Thank you for your feedback!');
       onClose();
     } catch (error) {
-      console.error("Error submitting rating:", error);
-      toast.error("Failed to submit your rating. Please try again.");
+      console.error('Error submitting rating:', error);
+      toast.error('Failed to submit your rating. Please try again.');
     }
   };
 
