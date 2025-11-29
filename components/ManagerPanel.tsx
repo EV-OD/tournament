@@ -1,12 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import {
-  doc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -123,9 +117,14 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
     }
 
     try {
+      if (!user) {
+        toast.error('Please sign in to update the venue');
+        return;
+      }
+
       setIsSaving(true);
-      const venueRef = doc(db, "venues", venueId as string);
-      await updateDoc(venueRef, {
+      const idToken = await user.getIdToken();
+      const payload = {
         name: formData.name,
         description: formData.description,
         pricePerHour: formData.pricePerHour,
@@ -134,17 +133,30 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
         longitude: formData.longitude,
         imageUrls: formData.imageUrls,
         attributes: formData.attributes,
-        updatedAt: serverTimestamp(),
+      };
+
+      const resp = await fetch(`/api/venues/${venueId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(payload),
       });
 
-      toast.success("Venue updated successfully");
+      if (!resp.ok) {
+        const json = await resp.json().catch(() => ({}));
+        console.error('Update venue API failed:', json);
+        toast.error(json?.error || 'Failed to update venue');
+        return;
+      }
+
+      toast.success('Venue updated successfully');
       setIsEditing(false);
-      
-      // Refresh the page to show updated data
       router.refresh();
     } catch (error) {
-      console.error("Error updating venue:", error);
-      toast.error("Failed to update venue");
+      console.error('Error updating venue:', error);
+      toast.error('Failed to update venue');
     } finally {
       setIsSaving(false);
     }

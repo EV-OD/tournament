@@ -27,9 +27,11 @@ service cloud.firestore {
     }
     
     // Venues collection
+    // Reads are public, but all writes (including manager edits) must go through
+    // server-side endpoints using the Admin SDK. Deny client-side writes.
     match /venues/{venueId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if false;
     }
     
     // VenueSlots collection (Critical data)
