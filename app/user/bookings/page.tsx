@@ -11,8 +11,7 @@ import {
   orderBy,
   doc,
   getDoc,
-  updateDoc,
-  serverTimestamp,
+  
   Timestamp,
 } from "firebase/firestore";
 import { cancelBooking, expireBooking } from "@/app/actions/bookings";
@@ -375,7 +374,7 @@ const UserBookingsPage = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          transactionUuid: booking.id,
+          transactionUuid: (booking as any).esewaTransactionUuid || booking.id,
           productCode: "EPAYTEST", // TODO: Get from env
           totalAmount: booking.amount || booking.price || 0,
         }),
@@ -409,15 +408,7 @@ const UserBookingsPage = () => {
         toast.info("Payment is still pending. Please try again later.");
       } else if (verificationData.status === "NOT_FOUND" || verificationData.status === "CANCELED") {
         toast.error("Payment not found or was cancelled.");
-        
-        // Update booking status to not_found for categorization
-        const bookingRef = doc(db, "bookings", booking.id);
-        await updateDoc(bookingRef, {
-          status: "not_found",
-          verificationFailedAt: serverTimestamp(),
-        });
-        
-        // Refresh bookings
+        // Server will mark the booking as failed (preferred). Refresh bookings to pick up server-side change.
         const q = query(
           collection(db, "bookings"),
           where("userId", "==", user?.uid),

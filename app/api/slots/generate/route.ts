@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 import { db, auth, isAdminInitialized } from "@/lib/firebase-admin";
+import { generateSlots } from "@/lib/slotService.admin";
 
 async function callerIsManagerOrAdmin(uid: string) {
   try {
@@ -44,31 +45,8 @@ export async function POST(request: NextRequest) {
     const allowed = await callerIsManagerOrAdmin(uid);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const batch = db.batch();
-
-    const now = new Date();
-    const dates = [...Array(days)].map((_, i) => {
-      const d = new Date(now);
-      d.setDate(now.getDate() + i);
-      return d.toISOString().split("T")[0];
-    });
-
-    const startHour = parseInt(startTime.split(":")[0], 10);
-    const endHour = parseInt(endTime.split(":")[0], 10);
-
-    for (const dateString of dates) {
-      for (let hour = startHour; hour < endHour; hour += Math.max(1, Math.floor(slotDuration / 60))) {
-        const hourString = `${hour.toString().padStart(2, "0")}:00`;
-        const slotId = getSlotId(venueId, dateString, hourString);
-        const slotRef = db.collection("slots").doc(slotId);
-        batch.set(slotRef, { groundId: venueId, date: dateString, startTime: hourString, status: "AVAILABLE" }, { merge: true });
-      }
-    }
-
-    const venueRef = db.collection("venues").doc(venueId);
-    batch.update(venueRef, { startTime, endTime });
-
-    await batch.commit();
+    // Delegate generation logic to server helper
+    await generateSlots(venueId, startTime, endTime, slotDuration, days);
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

@@ -9,9 +9,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { ESEWA_VERIFY_URL, ESEWA_SECRET_KEY } from '@/lib/esewa/config';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { bookSlot } from '@/lib/slotService';
+import { db, auth, isAdminInitialized } from '@/lib/firebase-admin';
+import admin from 'firebase-admin';
+import { bookSlot } from '@/lib/slotService.admin';
 import { logPayment } from '@/lib/paymentLogger';
 
 interface EsewaVerificationResponse {
@@ -31,6 +31,39 @@ function generateVerificationSignature(transactionUuid: string): string {
   hmac.update(message);
   return hmac.digest('base64');
 }
+
+// Helper: locate booking by transaction UUID with multiple strategies.
+async function locateBookingByTxn(rawTxn: string) {
+  const coll = db.collection('bookings');
+  let bookingRef = coll.doc(rawTxn);
+  let bookingSnap = await bookingRef.get();
+
+  if (!bookingSnap.exists && rawTxn.includes('_')) {
+    const prefixId = rawTxn.substring(0, rawTxn.lastIndexOf('_'));
+    bookingRef = coll.doc(prefixId);
+    bookingSnap = await bookingRef.get();
+  }
+
+  if (!bookingSnap.exists) {
+    const q = await coll.where('esewaTransactionUuid', '==', rawTxn).limit(1).get();
+    if (!q.empty) {
+      bookingSnap = q.docs[0];
+      bookingRef = coll.doc(bookingSnap.id);
+    }
+  }
+
+  return { bookingRef, bookingSnap };
+}
+
+// Helper: mark booking as failed/cancelled (server-side update)
+async function markBookingFailed(bookingRef: any, reason: string) {
+  await bookingRef.update({
+    status: 'payment_failed',
+    verificationFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+    verificationFailureReason: reason,
+  });
+}
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -93,14 +126,59 @@ export async function POST(request: NextRequest) {
 
     if (!isVerified) {
       console.log('⚠️ Payment not complete, status:', verificationData.status);
-      return NextResponse.json({
-        verified: false,
-        status: verificationData.status,
-        transactionUuid: verificationData.transaction_uuid,
-        refId: verificationData.ref_id,
-        totalAmount: verificationData.total_amount,
-        productCode: verificationData.product_code,
-      });
+
+      // For non-verified statuses, be conservative: do NOT delete or remove
+      // the booking/held record. Only mark the booking as failed for explicit
+      // terminal statuses (e.g. CANCELED, FAILED). If eSewa returns NOT_FOUND
+      // or PENDING, leave the booking as `pending_payment` so the user can
+      // retry or cancel the hold manually from the UI.
+      const terminalFailureStatuses = ['CANCELED', 'FAILED'];
+      const rawTxn = verificationData.transaction_uuid;
+
+      try {
+        const { bookingRef, bookingSnap } = await locateBookingByTxn(rawTxn);
+
+        const bookingId = bookingSnap?.exists ? bookingRef.id : (rawTxn.includes('_') ? rawTxn.substring(0, rawTxn.lastIndexOf('_')) : rawTxn);
+
+        if (bookingSnap?.exists && terminalFailureStatuses.includes(verificationData.status)) {
+          // Terminal failure: mark booking as failed (but do not delete).
+          await markBookingFailed(bookingRef, verificationData.status);
+          return NextResponse.json({
+            verified: false,
+            status: verificationData.status,
+            transactionUuid: verificationData.transaction_uuid,
+            refId: verificationData.ref_id,
+            totalAmount: verificationData.total_amount,
+            productCode: verificationData.product_code,
+            bookingUpdated: true,
+            bookingId,
+          });
+        }
+
+        // Non-terminal (e.g. NOT_FOUND, PENDING) — keep the booking untouched
+        // and return a clear response so the UI can show "Payment not done".
+        return NextResponse.json({
+          verified: false,
+          status: verificationData.status,
+          transactionUuid: verificationData.transaction_uuid,
+          refId: verificationData.ref_id,
+          totalAmount: verificationData.total_amount,
+          productCode: verificationData.product_code,
+          bookingFound: bookingSnap?.exists || false,
+          bookingId: bookingId,
+          message: 'Payment not completed; booking retained (no automatic deletion).',
+        });
+      } catch (err) {
+        console.warn('Failed to handle non-verified payment:', err);
+        return NextResponse.json({
+          verified: false,
+          status: verificationData.status,
+          transactionUuid: verificationData.transaction_uuid,
+          refId: verificationData.ref_id,
+          totalAmount: verificationData.total_amount,
+          productCode: verificationData.product_code,
+        });
+      }
     }
 
     // Payment is verified, now update the booking in Firestore
@@ -109,20 +187,39 @@ export async function POST(request: NextRequest) {
     try {
       // Extract bookingId from transactionUuid (format: bookingId_timestamp)
       // If no underscore, assume it's just the bookingId (backward compatibility)
-      const bookingId = transactionUuid.includes('_')
-        ? transactionUuid.substring(0, transactionUuid.lastIndexOf('_'))
-        : transactionUuid;
-
-      // Get booking details
+      // Locate booking: prefer exact match, then prefix-before-last-underscore,
+      // then query by `esewaTransactionUuid` field.
+      const rawTxn = transactionUuid;
+      let bookingRef = db.collection('bookings').doc(rawTxn);
       console.log('booking1');
-      const bookingRef = doc(db, 'bookings', bookingId);
-      let bookingSnap = await getDoc(bookingRef);
+      let bookingSnap = await bookingRef.get();
+
+      if (!bookingSnap.exists && rawTxn.includes('_')) {
+        const prefixId = rawTxn.substring(0, rawTxn.lastIndexOf('_'));
+        bookingRef = db.collection('bookings').doc(prefixId);
+        bookingSnap = await bookingRef.get();
+      }
+
+      if (!bookingSnap.exists) {
+        const q = await db.collection('bookings').where('esewaTransactionUuid', '==', rawTxn).limit(1).get();
+        if (!q.empty) {
+          bookingSnap = q.docs[0];
+          bookingRef = db.collection('bookings').doc(bookingSnap.id);
+        }
+      }
       console.log('booking2');
+
+      // Resolve bookingId for later logging/response use (prefer found doc id)
+      const bookingId = bookingSnap.exists
+        ? bookingRef.id
+        : rawTxn.includes('_')
+        ? rawTxn.substring(0, rawTxn.lastIndexOf('_'))
+        : rawTxn;
 
       // If booking is not found, don't treat this as a hard failure.
       // eSewa has confirmed the payment, so we should record the payment
       // and return success to avoid losing the confirmed payment.
-      if (!bookingSnap.exists()) {
+      if (!bookingSnap.exists) {
         console.warn('⚠️ Booking not found in database:', bookingId);
 
         // Log payment record so there's an audit trail even if booking is missing
@@ -182,6 +279,16 @@ export async function POST(request: NextRequest) {
           refId: verificationData.ref_id,
           totalAmount: verificationData.total_amount,
           productCode: verificationData.product_code,
+          bookingData: {
+            bookingId,
+            venueId: booking.venueId,
+            userId: booking.userId,
+            date: booking.date,
+            startTime: booking.startTime,
+            endTime: booking.endTime,
+            amount: booking.amount,
+            bookingType: booking.bookingType,
+          },
         });
       }
 
@@ -199,14 +306,14 @@ export async function POST(request: NextRequest) {
 
         // Update booking document
         console.log('✅ Updating booking document...');
-        await updateDoc(bookingRef, {
+        await bookingRef.update({
           status: 'confirmed',
-          paymentTimestamp: serverTimestamp(),
+          paymentTimestamp: admin.firestore.FieldValue.serverTimestamp(),
           esewaTransactionCode: verificationData.ref_id,
           esewaTransactionUuid: verificationData.transaction_uuid,
           esewaStatus: verificationData.status,
           esewaAmount: verificationData.total_amount,
-          verifiedAt: serverTimestamp(),
+          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
         // Log payment to history
@@ -237,6 +344,16 @@ export async function POST(request: NextRequest) {
           totalAmount: verificationData.total_amount,
           productCode: verificationData.product_code,
           bookingConfirmed: true,
+          bookingData: {
+            bookingId,
+            venueId: booking.venueId,
+            userId: booking.userId,
+            date: booking.date,
+            startTime: booking.startTime,
+            endTime: booking.endTime,
+            amount: booking.amount,
+            bookingType: booking.bookingType,
+          },
         });
       } catch (innerDbError) {
         console.error('❌ Database update error during confirmation:', innerDbError);

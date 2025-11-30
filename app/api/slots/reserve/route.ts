@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 import { db, auth, isAdminInitialized } from "@/lib/firebase-admin";
+import { reserveSlot } from "@/lib/slotService.admin";
 
 async function callerIsManagerOrAdmin(uid: string) {
   try {
@@ -77,6 +78,17 @@ export async function POST(request: NextRequest) {
 
       return { bookingId: bookingRef.id };
     });
+
+    // Also update the canonical venueSlots document (server-side helper)
+    try {
+      const slotAfter = await db.collection("slots").doc(slotId).get();
+      if (slotAfter.exists) {
+        const s = slotAfter.data();
+        await reserveSlot(venueId, s.date, s.startTime, decoded.uid, customerPhone + (notes ? ` | ${notes}` : ""));
+      }
+    } catch (e) {
+      console.warn("reserveSlot helper failed (non-fatal):", e);
+    }
 
     return NextResponse.json({ ok: true, ...result });
   } catch (err: any) {

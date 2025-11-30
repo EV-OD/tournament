@@ -14,36 +14,30 @@ import {
   getFailureUrl,
   type EsewaPaymentParams,
 } from './config';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+// Server-side initiation will persist esewaTransactionUuid; no client writes needed here.
 
 /**
- * Generate signature by calling the server-side API
+ * Request initiation from server which generates the transaction UUID
+ * and returns a signature + payment params for submitting to eSewa.
  */
-async function generateSignature(
-  totalAmount: string,
-  transactionUuid: string,
-  productCode: string
-): Promise<string> {
-  const response = await fetch('/api/payment/generate-signature', {
+async function requestInitiationFromServer(
+  bookingId: string,
+  totalAmount: string
+): Promise<{ signature: string; transactionUuid: string; paymentParams: EsewaPaymentParams } > {
+  const response = await fetch('/api/payment/initiate', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      totalAmount,
-      transactionUuid,
-      productCode,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookingId, totalAmount }),
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to generate signature');
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to initiate payment');
   }
 
   const data = await response.json();
-  return data.signature;
+  if (!data.success) throw new Error(data.error || 'Failed to initiate payment');
+  return { signature: data.signature, transactionUuid: data.transactionUuid, paymentParams: data.paymentParams };
 }
 
 /**
@@ -126,46 +120,14 @@ export async function initiateEsewaPayment(
       productDeliveryCharge
     );
 
-    // Generate a unique transaction UUID to avoid "Duplicate transaction UUID" errors on retry
-    // Format: bookingId_timestamp
-    const transactionUuid = `${bookingId}_${Date.now()}`;
-    const productCode = ESEWA_MERCHANT_CODE;
-
-    // Generate signature from server
-    const signature = await generateSignature(
-      totalAmount.toString(),
-      transactionUuid,
-      productCode
+    // Ask the server to create the canonical transaction UUID and signature
+    const { signature, transactionUuid, paymentParams } = await requestInitiationFromServer(
+      bookingId,
+      totalAmount.toString()
     );
 
-    // Prepare payment parameters
-    const paymentParams: EsewaPaymentParams = {
-      amount: amount.toString(),
-      taxAmount: taxAmount.toString(),
-      productServiceCharge: productServiceCharge.toString(),
-      productDeliveryCharge: productDeliveryCharge.toString(),
-      totalAmount: totalAmount.toString(),
-      transactionUuid,
-      productCode,
-      successUrl: getSuccessUrl(),
-      failureUrl: getFailureUrl(),
-    };
-
-    // Submit payment form (redirects to eSewa)
-    // Persist the generated transaction UUID on the booking document so
-    // background/auto-verification can use the exact value that was sent to eSewa.
-    try {
-      const bookingRef = doc(db, 'bookings', bookingId);
-      await updateDoc(bookingRef, {
-        esewaTransactionUuid: transactionUuid,
-        esewaInitiatedAt: serverTimestamp(),
-      });
-      console.log('✅ Saved esewaTransactionUuid on booking:', transactionUuid);
-    } catch (err) {
-      // Non-fatal: log and continue to redirect to eSewa. We still submit the form.
-      console.warn('⚠️ Failed to persist esewaTransactionUuid on booking:', err);
-    }
-
+    // Submit payment form (redirects to eSewa). The server already persisted
+    // the transactionUuid on the booking and updated the held entry atomically.
     submitPaymentForm(paymentParams, signature);
   } catch (error) {
     console.error('Error initiating eSewa payment:', error);

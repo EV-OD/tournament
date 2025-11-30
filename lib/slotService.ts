@@ -1,13 +1,8 @@
 /**
- * Slot Service - Centralized slot management abstraction layer
- * 
- * This module provides a unified interface for all slot operations,
- * abstracting away the underlying Firestore data structure.
- * 
- * Architecture: One document per venue containing slot configuration
- * and only exceptions (blocked, booked, held, reserved).
- * Available slots are reconstructed from config + exceptions.
+ * Deprecated: use `lib/slotService.read` for reads and `lib/slotService.admin` for server writes.
+ * This shim keeps existing imports working but delegates reads to the new read-only module.
  */
+export * from "@/lib/slotService.read";
 
 import {
   doc,

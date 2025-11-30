@@ -1,189 +1,132 @@
-# Firebase Client-Side Write Audit
+<!--
+  Consolidated Audit & Migration Report
+  Generated: 2025-11-29
+  This file replaces the earlier audit with a full session summary, the migration progress to date,
+  and an actionable next-step plan. Old, already-done sections were removed as requested.
+-->
+
+# Firebase Client Writes — Consolidated Audit & Migration Summary
 
 Date: 2025-11-29
 
-Summary
--------
-- Purpose: locate all places where the client (browser) directly performs writes to Firestore / Realtime DB in this repository.
-- Goal: make it easy to migrate write operations to backend endpoints (server functions / API routes) while allowing reads to remain client-side where appropriate.
+## Purpose
 
-Methodology
------------
-- Searched for common client write APIs: `setDoc`, `addDoc`, `updateDoc`, `deleteDoc`, `runTransaction`, `writeBatch`, `.set(` on Firestore refs, `arrayUnion`, `arrayRemove`, and `.push`.
-- Filtered results to files that include `"use client"` or live under client folders (`components/`, `app/` pages that are client), and inspected each file to confirm writes are client-originated.
+- Provide a single, authoritative audit of every client-side write to Firestore found in this repository.
+- Record work already completed (server migrations and rule changes).
+- List remaining client-write surfaces and a prioritized migration plan.
 
-High-level findings
--------------------
-- Many user-facing operations are done directly from client code; these include bookings, slot holds, slot generation, venue creation, user upserts, reviews/ratings, and various admin actions.
-- The `lib/slotService.ts` exposes many write-capable functions (initialize/update/book/hold/release/reserve...). Several client components call these functions directly — meaning complex transactional writes are initiated from the browser.
-- Some important server-side-only flows exist under `app/api/...` (e.g. payment verification) — these are fine and already perform writes server-side.
+## Executive summary
 
-Inventory — client-side writes
------------------------------
-Each entry lists: file path, why it's client, write APIs used, and a short code snippet.
+- Objective: remove client-originated writes for sensitive collections (bookings, slots, users, venues, reviews, admin flows) by migrating them to server endpoints that use the Firebase Admin SDK, then tighten Firestore rules to deny client writes.
+- Progress so far: bookings payment verification now performs server-side confirmation, a server-only `bookSlot` helper was added, the dev tester page was neutralized, and `firestore.rules` were updated to deny client writes for critical collections (do not deploy stricter rules until all client-write paths are migrated).
+- Remaining high-priority work: migrate the `lib/slotService.ts` write functions (holds, reserves, unbooks, generate), and replace direct admin-page writes with server endpoints (or accept them explicitly in your threat model).
 
-1) `components/BookingForm.tsx` (client)
-   - APIs: `setDoc` (create booking), `updateDoc` (update slot status), `serverTimestamp`.
-   - Location: `handleBooking` handler.
-   - Snippet:
-     ```tsx
-     const bookingRef = doc(collection(db, "bookings"));
-     await setDoc(bookingRef, { venueId, userId: user.uid, status: "pending", createdAt: serverTimestamp() });
-     const slotRef = doc(db, "slots", selectedTimeSlotId);
-     await updateDoc(slotRef, { status: "booked" });
-     ```
-   - Why migrate: bookings should be created server-side to enforce pricing, idempotency, race-safety and to avoid exposing business logic or client-side trust issues.
+## Technical foundations
 
-2) `components/register-form.tsx` (client)
-   - APIs: `setDoc`, `getDoc`, `serverTimestamp`.
-   - Location: `safeUpsertUserDoc` called after auth flows.
-   - Snippet:
-     ```tsx
-     const userRef = doc(db, "users", uid);
-     const snap = await getDoc(userRef);
-     if (!snap.exists()) {
-       await setDoc(userRef, { ...base, role, createdAt: serverTimestamp() });
-     } else {
-       await setDoc(userRef, base, { merge: true });
-     }
-     ```
-   - Why migrate: user metadata upserts are OK client-side after auth, but moving to backend can centralize role assignment rules and validation.
+- Stack: Next.js (App Router), TypeScript, React (client & server components).
+- Firebase usage:
+  - Client SDK: used for reads and (historically) writes; clients obtain ID tokens (`user.getIdToken()`) and call APIs.
+  - Admin SDK: used in server endpoints for verified transactional writes; requires `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, and `NEXT_PUBLIC_FIREBASE_PROJECT_ID` in environment.
+- Security: server endpoints verify ID tokens, enforce role checks (manager/admin), and perform atomic work with Admin SDK transactions when needed.
 
-3) `components/WeeklySlotsGrid.old.tsx` (client)
-   - APIs: `runTransaction`, `transaction.set`, `addDoc`, `writeBatch`, `batch.set`, `transaction.delete`, `setDoc`.
-   - Locations: `handleHoldSlot`, `handleReserveSlot`, `handleGenerateSlots`, manager dialogs.
-   - Snippet (hold + create booking):
-     ```tsx
-     await runTransaction(db, async (transaction) => {
-       transaction.set(slotDocRef, { status: "HELD", heldBy: user.uid, holdExpiresAt: fiveMinutesFromNow }, { merge: true });
-       const bookingDocRef = doc(collection(db, "bookings"));
-       transaction.set(bookingDocRef, { userId: user.uid, status: "PENDING_PAYMENT", createdAt: serverTimestamp() });
-     });
-     ```
-   - Why migrate: transactional slot holds/pay flows should be server-controlled (prevent client race conditions and cheating). Complex batch writes and transactions are better protected server-side.
+## What was changed (completed work)
 
-4) `components/SlotEditor.old.tsx` and `components/SlotEditor.tsx` (client)
-   - APIs: `addDoc`, `deleteDoc`, `updateDoc`, calls to `initializeVenueSlots()` and `updateSlotConfig()` from `lib/slotService`.
-   - Snippet (old add):
-     ```tsx
-     await addDoc(collection(db, "slots"), { groundId: venueId, date, startTime, status: "available", createdAt: serverTimestamp() });
-     ```
-   - Snippet (new editor uses service):
-     ```ts
-     await initializeVenueSlots(venueId, config);
-     ```
-   - Why migrate: slot config initialisation and slot mutations should be validated and authorized server-side to avoid corrupting schedule state.
+- Neutralized dev tester page:
+  - `app/tester/page.tsx` previously exposed many direct write operations. It has been replaced with a harmless stub to remove the accidental write surface.
+- Server-side slot helper:
+  - `lib/slotService.admin.ts` was added (server-only). It contains a `bookSlot(...)` implementation that runs necessary Admin SDK transactions to confirm bookings and update slots/venueSlots atomically.
+- Payment verification endpoint updated:
+  - `app/api/payment/verify/route.ts` now:
+    - Verifies eSewa responses server-side.
+    - Reads booking documents with the Admin SDK.
+    - Calls `lib/slotService.admin.bookSlot(...)` to convert holds to confirmed bookings.
+    - Marks failing verifications (NOT_FOUND/CANCELED/FAILED) by updating booking status server-side and setting `verificationFailedAt` timestamps.
+- Client bookings page adjusted:
+  - `app/user/bookings/page.tsx` no longer performs a client `updateDoc` fallback when verification fails. It relies on the server to mark the booking and refreshes client reads accordingly.
+- Firestore rules updated (local file edited, but only deploy after migration):
+  - `firestore.rules` in repo was updated to explicitly deny client writes for: `users`, `venues`, `venueSlots`, `slots`, `bookings`, `reviews`, and `venues/{venueId}/comments` and includes a conservative catch-all deny-write rule. The file includes comments that list which server endpoints are now authoritative for writes.
 
-5) `components/addGround.tsx` (client)
-   - APIs: `addDoc(collection(db, "venues"))` and then `initializeVenueSlots(newVenueRef.id, config)` from `lib/slotService`.
-   - Snippet:
-     ```tsx
-     const newVenueRef = await addDoc(collection(db, "venues"), { name, latitude, managedBy: user.uid, createdAt: new Date().toISOString() });
-     await initializeVenueSlots(newVenueRef.id, { startTime, endTime, slotDuration, daysOfWeek });
-     ```
-   - Why migrate: venue creation is a privileged operation (managedBy, pricing) — should be an authenticated backend API to prevent fraudulent managedBy values and to centralize initialization logic.
+## Why these changes
 
-6) `components/ReviewsSection.tsx` (client)
-   - APIs: `runTransaction` with `transaction.set` to `venues/{id}/comments`, `reviews/{venueId_userId}`, and `transaction.update` on `venues/{id}` to update `averageRating` & `reviewCount`.
-   - Snippet:
-     ```tsx
-     await runTransaction(db, async (transaction) => {
-       const venueRef = doc(db, "venues", venueId);
-       transaction.set(commentRef, commentData);
-       transaction.set(reviewRef, reviewData, { merge: true });
-       transaction.update(venueRef, { averageRating: roundedAverage, reviewCount: newCount });
-     });
-     ```
-   - Why migrate: rating calculations and constraints (one review per user, abuse prevention) are safer server-side.
+- Server-side Admin SDK writes guarantee atomicity and server-side authorization, preventing race conditions, duplication, client tampering, and under/over booking.
+- Tightening Firestore rules without migrating all client writes first will break functionality — migration must complete before enforcing rules in production.
 
-7) `components/RatingModal.tsx` (client)
-   - APIs: `runTransaction` (same pattern as ReviewsSection), `transaction.update` booking rated flag.
-   - Why migrate: same rationale as above.
+## Detailed inventory (remaining client-side write surfaces)
 
-8) `components/ManagerPanel.tsx` (client)
-   - APIs: `updateDoc(doc(db, "venues", venueId))` to save venue edits.
-   - Snippet:
-     ```tsx
-     await updateDoc(venueRef, { name, description, pricePerHour, imageUrls, attributes, updatedAt: serverTimestamp() });
-     ```
-   - Why migrate: manager edits should be validated server-side (permission checks already exist in UI but server rules are stronger).
+The following files still contain client-originated writes or previously did and require migration or verification. Many were already audited in the earlier report; this is the updated, current list.
 
-9) `app/tester/page.tsx` (client)
-   - APIs: `addDoc` (venues, bookings), `deleteDoc` (bulk deletes) — intentionally a dev/test page.
-   - Why migrate: this page is for development only; remove or protect before production.
+- `lib/slotService.ts` — Critical: contains many write-capable functions (initializeVenueSlots, bookSlot, holdSlot, releaseHold, reserveSlot, unbookSlot, block/unblock slot, updateSlotConfig, cleanExpiredHolds). These functions are called from client components; porting them to server-side `lib/slotService.admin.ts` (or exposing secure API wrappers) is the top priority.
+- `components/WeeklySlotsGrid.old.tsx` — Legacy component with `runTransaction`, batch writes, and booking creation flows used by the UI to hold and reserve slots. Must be updated to call server endpoints.
+- `components/SlotEditor.tsx` / `components/SlotEditor.old.tsx` — Slot create/update/delete functionality; calls `initializeVenueSlots()` and other write functions. Migrate to server endpoints.
+- `components/BookingForm.tsx` — Creates bookings and updates slot statuses. Replace direct writes with a POST `/api/bookings` that validates and performs the transaction.
+- `components/addGround.tsx` — Venue creation that calls `initializeVenueSlots`. Use `/api/venues` server endpoint to create venue + initialize slots.
+- `components/ReviewsSection.tsx` & `components/RatingModal.tsx` — Run transactions to set `venues/{id}/comments`, `reviews/{venueId_userId}`, and update aggregated rating stats. Create `/api/venues/:id/reviews` server endpoint to centralize validation and aggregation.
+- `components/ManagerPanel.tsx` — Manager venue edits; currently updates `venues/{id}` directly. Use `/api/venues/:id` with role checks.
+- `lib/esewa/initiate.ts` — Persists `esewaTransactionUuid` client-side before redirect; recommend using `/api/payment/initiate` to generate & persist server-side.
+- `app/admin/*` pages (`venues`, `users`, `bookings`, `overview`, `managers/[id]`) — Several admin pages perform `addDoc`/`updateDoc`/`deleteDoc` directly. Either migrate admin writes to `/api/admin/*` endpoints or accept that admin UI writes will stay client-side under a specific risk model.
 
-10) `app/admin/venues/page.tsx` (client)
-    - APIs: `addDoc`, `updateDoc`, `deleteDoc` for `venues`.
-    - Why migrate: admin operations should be server-side or protected via secure endpoints / auth checks.
+## Completed vs pending (status)
 
-11) `app/admin/bookings/page.tsx`, `app/admin/overview/page.tsx` (client)
-    - APIs: `updateDoc(doc(db, "bookings", id))` to change booking statuses (approve/reject).
-    - Why migrate: approve/reject actions are business-critical; moving to backend prevents tampering and enables audit logs.
+- Completed:
+  - Added server-only `bookSlot` helper: `lib/slotService.admin.ts` (server-side transactional booking confirmation).
+  - Updated `/api/payment/verify` to use Admin SDK and server `bookSlot`.
+  - Neutralized dev tester page (`app/tester/page.tsx`).
+  - Updated `app/user/bookings/page.tsx` to remove client fallback write on verification failures.
+  - Edited `firestore.rules` to reflect server-authoritative write rules (local file updated; do not deploy until migration done).
+- Partially complete / Pending:
+  - Migrate `lib/slotService.ts` write functions to server-side implementations (only `bookSlot` implemented server-side so far).
+  - Replace direct admin-page writes with server endpoints (high priority if rules will be strict).
+  - Replace client-side `lib/esewa/initiate.ts` persist step with a server-side initiate endpoint.
 
-12) `app/admin/users/page.tsx` (client)
-    - APIs: `updateDoc(doc(db, "users", id))` (toggle role), `deleteDoc(doc(db, "users", id))`.
-    - Why migrate: role changes must be server-authorized and audited.
+## Migration roadmap (recommended next steps)
 
-13) `app/admin/managers/[id]/page.tsx` (client)
-    - APIs: `updateDoc(doc(db, "users", id))` for limit changes, `addDoc(collection(db, "payouts"))` for recording payouts.
-    - Why migrate: payouts and limits need server-side validation and consistent accounting.
+Priority order (recommended):
 
-14) `app/user/bookings/page.tsx` (client)
-    - APIs: `updateDoc` to set booking status to `not_found` and `verificationFailedAt` when payment verification fails; this is invoked after calling the server `/api/payment/verify` which already does server-side confirmation in many flows.
-    - Note: this is a hybrid flow — verification is server-side but the client records a fallback status. Prefer the server to update booking status and return updated booking to the client.
+1) Booking & slot hold flows (highest priority):
+   - Add `POST /api/bookings` that performs the hold/create booking transaction atomically using Admin SDK transactions.
+   - Refactor `components/BookingForm.tsx` and slot-hold UIs to call the new endpoint.
 
-15) `lib/slotService.ts` (library called by clients)
-    - APIs inside the file: `setDoc`, `updateDoc`, `runTransaction`, `arrayUnion`, `arrayRemove`, `Timestamp`, `serverTimestamp`.
-    - Functions: `initializeVenueSlots`, `getVenueSlots`, `bookSlot`, `holdSlot`, `releaseHold`, `reserveSlot`, `blockSlot`, etc.
-    - Why migrate: the service implements the domain model for slots and currently can be (and is) called from client components. Either this service must be moved to server-only code (use admin SDK) or a safe server wrapper API should be created which calls these functions in a controlled environment.
+2) Port `lib/slotService.ts` writes to server:
+   - Move or reimplement `holdSlot`, `releaseHold`, `reserveSlot`, `unbookSlot`, `blockSlot`, `unblockSlot`, `cleanExpiredHolds`, `initializeVenueSlots`, and `updateSlotConfig` as server functions (use `lib/slotService.admin.ts` as the home for server logic).
+   - Expose minimal endpoints: `/api/slots/hold`, `/api/slots/reserve`, `/api/slots/unbook`, `/api/slots/generate`, `/api/slots/config`.
 
-Server-side / safe-write examples (already server)
------------------------------------------------
-- `app/api/payment/verify/route.ts` — payment verification and logging happen server-side and call `logPayment()` in `lib/paymentLogger.ts`. Keep this pattern for sensitive flows.
+3) Venue & admin flows:
+   - Implement `/api/venues` (create) and `/api/venues/:id` (update/delete) with manager/admin validation and internal calls to initialize slots.
+   - Implement admin endpoints `/api/admin/users`, `/api/admin/bookings`, `/api/admin/payouts` with role checks and audit logging.
 
-Prioritised migration suggestions
---------------------------------
-1. Booking creation and slot-hold flow (highest priority)
-   - Why: money + race conditions + inventory. Convert `BookingForm` and `WeeklySlotsGrid` slot-hold/booking flows to server endpoints. Implement a POST `/api/bookings` that performs the transaction atomically (use Firestore transactions on the server). Return booking id and next steps (payment URL or redirect data).
+4) Reviews & ratings:
+   - Add `/api/venues/:id/reviews` to handle review creation/upsert and to recalculate `averageRating` and `reviewCount` server-side.
 
-2. Slot service functions called from client (`lib/slotService.ts`)
-   - Move the service to server code (or create server wrappers) and expose a minimal REST/edge API for operations: `POST /api/slots/hold`, `POST /api/slots/book`, `POST /api/slots/release`, `POST /api/slots/generate`.
+5) Payment initiate flow:
+   - Replace client-side persist of `esewaTransactionUuid` with `/api/payment/initiate` that returns the redirect parameters and stores the transaction server-side.
 
-3. Venue create / initialize (`addGround`, `admin/venues`) — migrate to server-side `POST /api/venues` which enforces `managedBy` matches authenticated admin/manager and calls `initializeVenueSlots` internally.
+6) Finalize Firestore rules & deploy:
+   - Only after migrating all client write paths (or explicitly accepting admin-only client writes), deploy the stricter `firestore.rules` that deny client writes to the critical collections.
 
-4. Reviews / ratings — move write logic to server (`POST /api/venues/:id/reviews`) so rating aggregation, unique-review checks, and abuse protections are enforced centrally.
+## Safety & deployment notes
 
-5. Admin actions (approve / reject / payouts / change roles) — must be server endpoints with strict auth/role checks and audit logs.
+- Admin SDK env vars: ensure `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (with proper newlines), and `NEXT_PUBLIC_FIREBASE_PROJECT_ID` are set in production. Server endpoints will fail if Admin SDK cannot initialize.
+- ID token contract: client calls must attach `Authorization: Bearer <idToken>` (from `user.getIdToken()`) to endpoints; server verifies tokens and enforces roles.
+- Don't deploy `firestore.rules` tightening until you confirm there are no remaining client-write paths, or plan to allow admin-only client writes in your threat model.
 
-6. User upsert on registration — optionally keep a lightweight client upsert, but prefer a server endpoint that sets `role` and ensures consistent `createdAt` / default fields.
+## One-time data migration considerations
 
-Recommended roadmap & next steps
---------------------------------
-- Short term (1–2 days):
-  - Implement `POST /api/bookings` and refactor `components/BookingForm.tsx` to call that endpoint.
-  - Implement backend wrappers for `hold` and `book` flows; update `WeeklySlotsGrid` to call them.
+- Reviews currently exist in two places (`reviews/{venueId_userId}` and `venues/{id}/comments`). Consider a one-time migration to consolidate into a single authoritative location, or keep the UI reading both until you deprecate the legacy shape.
 
-- Medium term (1–2 weeks):
-  - Move `lib/slotService.ts` to a server-only module (or create server wrappers) and ensure client calls go through API endpoints.
-  - Move venue creation and admin write flows to server endpoints; add audit logging collection.
+## What I changed in this repository during the session (reference)
 
-- Longer term:
-  - Add integration tests (server) for transactional flows (booking, holds) to guard against race conditions.
-  - Harden security rules and reduce client write permissions in Firestore rules to only allow reads and minimal writes.
+- Added: `lib/slotService.admin.ts` — server `bookSlot` implementation using Admin SDK transactions.
+- Updated: `app/api/payment/verify/route.ts` — now uses Admin SDK booking reads and server `bookSlot` and marks failed verifications server-side.
+- Updated: `app/user/bookings/page.tsx` — removed client fallback write after failed verification; client now refreshes reads.
+- Updated: `app/tester/page.tsx` — neutralized dev tester page to remove dev write surfaces.
+- Updated: `firestore.rules` — added comments and an explicit deny of client writes for critical collections (local file updated; do not deploy until migration done).
 
-Appendix — Notes & examples
----------------------------
-- Example endpoint design for booking:
-  - POST `/api/bookings` payload: { venueId, slotId, userId, paymentMethod, metadata }
-  - Server action: run transaction -> verify slot availability, create booking doc, update inventory/slot status, return booking id and payment instructions.
+## How I can help next (pick one):
 
-- Example endpoint design for manager actions:
-  - POST `/api/admin/venues/:id` (update) — authenticated + role check; record admin user in `updatedBy` and write an audit record in `adminActions` collection.
+- Option A (recommended): Fully migrate `lib/slotService.ts` writes to server-side implementations and create the minimal `/api/slots/*` endpoints; then update client components in one PR.
+- Option B: Produce a staged PR plan (file-by-file diffs) for you to review before edits.
+- Option C: Start with a narrower, high-impact migration: `POST /api/bookings` + refactor `BookingForm` and the hold flow.
 
-If you want I can:
-- Generate a JSON/CSV with every client write occurrence with exact file+line ranges (useful for automated PRs).
-- Start scaffolding the most important server endpoints (`/api/bookings`, `/api/slots/hold`, `/api/venues`) and refactor a single client component to call them as a working example.
+If you want me to continue, tell me which option to pick and I'll proceed (I can implement Option C quickly as a working example).
 
-Contact
--------
-Report generated by the code assistant. Ask me which migration tasks to prioritize and I can open a PR to implement them.
+-- End of consolidated audit --

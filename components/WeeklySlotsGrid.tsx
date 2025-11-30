@@ -10,7 +10,7 @@ import {
 import {
   reconstructSlots,
   type ReconstructedSlot,
-} from "@/lib/slotService";
+} from "@/lib/slotService.read";
 import { 
   createBooking, 
   createPhysicalBooking, 

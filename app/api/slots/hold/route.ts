@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 import { db, auth, isAdminInitialized } from "@/lib/firebase-admin";
+import { holdSlot } from "@/lib/slotService.admin";
 
 export async function POST(request: NextRequest) {
   if (!isAdminInitialized()) {
@@ -61,7 +62,16 @@ export async function POST(request: NextRequest) {
         bookingExpiresAt: holdExpiresAt,
       };
 
-      tx.set(bookingRef, bookingData);
+      // Mirror hold into canonical venueSlots document
+      try {
+        const slotAfter = await db.collection("slots").doc(slotId).get();
+        if (slotAfter.exists) {
+          const s = slotAfter.data();
+          await holdSlot(venueId, s.date, s.startTime, uid, result.bookingId, holdDurationMinutes);
+        }
+      } catch (e) {
+        console.warn("holdSlot helper failed (non-fatal):", e);
+      }
 
       tx.update(slotRef, {
         status: "HELD",

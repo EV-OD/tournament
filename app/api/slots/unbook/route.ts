@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 import { db, auth, isAdminInitialized } from "@/lib/firebase-admin";
+import { unbookSlot } from "@/lib/slotService.admin";
 
 async function callerIsManagerOrAdmin(uid: string) {
   try {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     const allowed = await callerIsManagerOrAdmin(uid);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    await db.runTransaction(async (tx) => {
+    const txResult = await db.runTransaction(async (tx) => {
       const bookingRef = db.collection("bookings").doc(bookingId);
       const slotRef = db.collection("slots").doc(slotId);
 
@@ -52,7 +53,17 @@ export async function POST(request: NextRequest) {
 
       tx.delete(bookingRef);
       tx.update(slotRef, { status: "AVAILABLE", bookingId: admin.firestore.FieldValue.delete(), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      return { bookingData };
     });
+
+    // Keep venueSlots canonical: remove booking from venueSlots bookings array
+    try {
+      if (txResult && txResult.bookingData && txResult.bookingData.date && txResult.bookingData.startTime) {
+        await unbookSlot(venueId, txResult.bookingData.date, txResult.bookingData.startTime);
+      }
+    } catch (e) {
+      console.warn("unbookSlot helper failed (non-fatal):", e);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

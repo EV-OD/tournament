@@ -120,9 +120,30 @@ export default function PaymentSuccessPage() {
       // Success!
       setStatus("success");
       setMessage("Payment successful! Your booking has been confirmed.");
-      
-      // Fetch details for the summary card
-      await fetchBookingDetails(transactionUuid);
+
+      // If server returned booking data, use it to populate the summary without
+      // requiring a direct client Firestore read (which can be blocked by rules
+      // if the user is not authenticated after redirect).
+      if (verificationData.bookingData) {
+        setBookingDetails(verificationData.bookingData);
+        if (verificationData.bookingData.venueId) {
+          // Optionally fetch venue details (venues reads are public per rules),
+          // but guard with try/catch.
+          try {
+            const venueDoc = await getDoc(doc(db, "venues", verificationData.bookingData.venueId));
+            if (venueDoc.exists()) setVenueDetails(venueDoc.data());
+          } catch (e) {
+            console.warn("Could not read venue details from client DB:", e);
+          }
+        }
+      } else if (verificationData.bookingFound === false) {
+        // Server verified the payment but booking document was not found.
+        // Don't attempt a client Firestore read (it will fail if the user is not authenticated after redirect).
+        console.warn('Payment verified but booking document not found on server');
+      } else {
+        // Fallback: attempt to read booking details from client Firestore (may fail if user not signed in)
+        await fetchBookingDetails(transactionUuid);
+      }
 
     } catch (error) {
       console.error("❌ Error verifying payment:", error);

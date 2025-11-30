@@ -1,5 +1,7 @@
-import { db } from "@/lib/firebase";
+import { db as clientDb } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import { db as adminDb, isAdminInitialized } from "@/lib/firebase-admin";
+import admin from "firebase-admin";
 
 export interface PaymentLogData {
   transactionUuid: string;
@@ -22,12 +24,21 @@ export async function logPayment(data: PaymentLogData) {
     
     if (data.venueId) {
       try {
-        const venueRef = doc(db, "venues", data.venueId);
-        const venueSnap = await getDoc(venueRef);
-        if (venueSnap.exists()) {
-          const venueData = venueSnap.data();
-          managerId = venueData.managedBy || null;
-          venueName = venueData.name || null;
+        if (isAdminInitialized()) {
+          const venueSnap = await adminDb.collection("venues").doc(data.venueId).get();
+          if (venueSnap.exists) {
+            const venueData = venueSnap.data();
+            managerId = venueData?.managedBy || null;
+            venueName = venueData?.name || null;
+          }
+        } else {
+          const venueRef = doc(clientDb, "venues", data.venueId);
+          const venueSnap = await getDoc(venueRef);
+          if (venueSnap.exists()) {
+            const venueData = venueSnap.data();
+            managerId = venueData.managedBy || null;
+            venueName = venueData.name || null;
+          }
         }
       } catch (err) {
         console.error("Error fetching venue details for payment log:", err);
@@ -37,29 +48,48 @@ export async function logPayment(data: PaymentLogData) {
     // 2. Fetch user details (optional, but good for history)
     let userEmail = null;
     if (data.userId) {
-        try {
-            const userRef = doc(db, "users", data.userId);
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-                userEmail = userSnap.data().email || null;
-            }
-        } catch (err) {
-            console.error("Error fetching user details for payment log:", err);
+      try {
+        if (isAdminInitialized()) {
+          const userSnap = await adminDb.collection("users").doc(data.userId).get();
+          if (userSnap.exists) {
+            userEmail = userSnap.data()?.email || null;
+          }
+        } else {
+          const userRef = doc(clientDb, "users", data.userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            userEmail = userSnap.data().email || null;
+          }
         }
+      } catch (err) {
+        console.error("Error fetching user details for payment log:", err);
+      }
     }
 
     // 3. Create payment record
-    const paymentRecord = {
-      ...data,
-      managerId,
-      venueName,
-      userEmail,
-      createdAt: serverTimestamp(),
-      // Add a searchable date string for easier client-side filtering if needed
-      dateString: new Date().toISOString().split('T')[0], 
-    };
+    const dateString = new Date().toISOString().split('T')[0];
 
-    await addDoc(collection(db, "payments"), paymentRecord);
+    if (isAdminInitialized()) {
+      const paymentRecordAdmin = {
+        ...data,
+        managerId,
+        venueName,
+        userEmail,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        dateString,
+      } as any;
+      await adminDb.collection("payments").add(paymentRecordAdmin);
+    } else {
+      const paymentRecord = {
+        ...data,
+        managerId,
+        venueName,
+        userEmail,
+        createdAt: serverTimestamp(),
+        dateString,
+      };
+      await addDoc(collection(clientDb, "payments"), paymentRecord);
+    }
     console.log("✅ Payment logged successfully:", data.transactionUuid);
     return true;
   } catch (error) {

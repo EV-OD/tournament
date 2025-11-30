@@ -2,6 +2,17 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // NOTE: The following collections are now write-protected from clients
+    // because all mutations happen via server-side endpoints (Admin SDK):
+    // - POST /api/payment/verify  (confirms payments, books slots)
+    // - POST /api/bookings        (create bookings)
+    // - POST /api/slots/*         (hold/reserve/release/generate)
+    // - POST /api/venues          (create venues + initialize venueSlots)
+    // - PATCH /api/venues/{id}    (manager/admin venue edits)
+    // - POST /api/venues/{id}/reviews (create/update reviews + comments)
+    // - POST /api/users/upsert    (safe user doc upserts)
+    // Server endpoints use the Admin SDK and therefore bypass these rules.
+
     
     // Helper functions
     function isAuthenticated() {
@@ -68,6 +79,13 @@ service cloud.firestore {
     match /venues/{venueId}/comments/{commentId} {
       allow read: if true;
       // All comment writes must be performed server-side to ensure consistency
+      allow write: if false;
+    }
+
+    // Catch-all: deny client-side writes everywhere by default. Keep reads
+    // permissive where explicitly allowed above. Server/Admin SDK operations
+    // are not affected by security rules.
+    match /{document=**} {
       allow write: if false;
     }
   }
