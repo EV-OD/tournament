@@ -12,7 +12,6 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { Loader2, MapPin, DollarSign, ChevronRight, Plus } from "lucide-react";
-import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 import ManagerPanel from "@/components/ManagerPanel";
 import AddGround from "@/components/addGround";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -29,7 +28,7 @@ const MyVenuesPage = () => {
   const [venues, setVenues] = useState<any[]>([]);
   const [selectedVenue, setSelectedVenue] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
+  // removed hasVenueAccess - show venue list even if empty
   const [isAddVenueOpen, setIsAddVenueOpen] = useState(false);
 
   const fetchVenues = useCallback(async () => {
@@ -42,13 +41,7 @@ const MyVenuesPage = () => {
       );
       const venueSnapshot = await getDocs(venuesQuery);
 
-      if (venueSnapshot.empty) {
-        setHasVenueAccess(false);
-        setLoading(false);
-        return;
-      }
-
-      setHasVenueAccess(true);
+      // If no venues found, we'll show the empty state below.
       const venuesData = venueSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -92,9 +85,7 @@ const MyVenuesPage = () => {
     );
   }
 
-  if (hasVenueAccess === false) {
-    return <NoVenueAccess />;
-  }
+  // No access-restriction view; empty list shown when user has no venues.
 
   // Show venue list if no venue is selected
   if (!selectedVenue) {

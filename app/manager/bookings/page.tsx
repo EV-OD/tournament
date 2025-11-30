@@ -28,7 +28,6 @@ import { toast } from "sonner";
 import { Loader2, ArrowLeft, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
-import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 import { managerCancelBooking } from "@/app/actions/bookings";
 import { useSearchParams } from "next/navigation";
 import { useRef } from "react";
@@ -39,7 +38,7 @@ const ManagerBookingsPage = () => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasVenueAccess, setHasVenueAccess] = useState<boolean | null>(null);
+  // removed hasVenueAccess - show empty bookings when manager has no venues
   const [searchTerm, setSearchTerm] = useState("");
   const [venueIds, setVenueIds] = useState<string[]>([]);
   const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
@@ -58,13 +57,8 @@ const ManagerBookingsPage = () => {
       );
       const venueSnapshot = await getDocs(venuesQuery);
 
-      if (venueSnapshot.empty) {
-        setHasVenueAccess(false);
-        setLoading(false);
-        return;
-      }
-
-      setHasVenueAccess(true);
+      // If no venues, managerVenueIds will be empty and later logic will
+      // result in an empty bookings list being shown.
       // Collect all venue IDs managed by this manager
       const managerVenueIds = venueSnapshot.docs.map((d) => d.id);
       setVenueIds(managerVenueIds);
@@ -256,9 +250,7 @@ const ManagerBookingsPage = () => {
     );
   }
 
-  if (hasVenueAccess === false) {
-    return <NoVenueAccess />;
-  }
+  // No early-return for access; show empty state when there are no bookings.
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pt-14 lg:pt-0">

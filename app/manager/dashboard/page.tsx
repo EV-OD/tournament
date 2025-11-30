@@ -31,7 +31,6 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Calendar, Settings, Users, Store, CreditCard, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { NoVenueAccess } from "@/components/manager/NoVenueAccess";
 import { calculateCommission, getVenueCommission } from "@/lib/commission";
 
 const ManagerDashboardPage = () => {
@@ -94,12 +93,12 @@ const ManagerDashboardPage = () => {
       arrSnap.docs.forEach((d) => docsMap.set(d.id, d));
 
       if (docsMap.size === 0) {
-        setHasVenueAccess(false);
+        // No venues managed by this user; show empty dashboard (no access UI)
+        setVenueIds([]);
+        setRecentBookings([]);
         setLoading(false);
         return;
       }
-
-      setHasVenueAccess(true);
 
       // Collect all venues managed by this manager
       const managerVenueIds = Array.from(docsMap.keys());
@@ -204,9 +203,8 @@ const ManagerDashboardPage = () => {
     );
   }
 
-  if (hasVenueAccess === false) {
-    return <NoVenueAccess />;
-  }
+  // If manager has no venues, the fetch function returns early and
+  // the default empty state (no bookings/stats) will be shown.
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pt-14 lg:pt-0">

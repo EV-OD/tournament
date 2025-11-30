@@ -50,11 +50,7 @@ const ManagerLayout = ({ children }: ManagerLayoutProps) => {
   }
 
   const menuItems = [
-    {
-      href: "/",
-      label: "Homepage",
-      icon: Home,
-    },
+
     {
       href: "/manager/dashboard",
       label: "Dashboard",
@@ -74,6 +70,11 @@ const ManagerLayout = ({ children }: ManagerLayoutProps) => {
       href: "/manager/venue-settings",
       label: "My Venue",
       icon: Settings,
+    },
+    {
+      href: "/",
+      label: "Homepage",
+      icon: Home,
     },
   ];
 
