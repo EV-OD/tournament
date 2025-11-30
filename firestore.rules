@@ -60,9 +60,47 @@ service cloud.firestore {
     
     // Bookings collection
     // Deny client-side creation/updates. All bookings must go through Server Actions.
+    // Allow reads for:
+    // - the user who made the booking
+    // - admins
+    // - managers of the venue referenced by the booking (venues/{venueId}.managedBy)
     match /bookings/{bookingId} {
       allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || isAdmin()
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        (
+          resource.data.venueId != null &&
+          exists(/databases/$(database)/documents/venues/$(resource.data.venueId)) &&
+          (
+            // Support both string `managedBy` and array `managedBy`
+            get(/databases/$(database)/documents/venues/$(resource.data.venueId)).data.managedBy == request.auth.uid ||
+            request.auth.uid in get(/databases/$(database)/documents/venues/$(resource.data.venueId)).data.managedBy
+          )
+        )
+      );
+      allow write: if false;
+    }
+
+    // Payments collection
+    // Allow reads for:
+    // - admins
+    // - the user who made the payment (resource.data.userId)
+    // - the manager assigned to the payment (resource.data.managerId)
+    // - the manager of the venue referenced by the payment (resource.data.venueId)
+    // Writes are denied client-side; payments should be created/updated server-side.
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.managerId == request.auth.uid ||
+        (
+          resource.data.venueId != null &&
+          exists(/databases/$(database)/documents/venues/$(resource.data.venueId)) &&
+          (
+            get(/databases/$(database)/documents/venues/$(resource.data.venueId)).data.managedBy == request.auth.uid ||
+            request.auth.uid in get(/databases/$(database)/documents/venues/$(resource.data.venueId)).data.managedBy
+          )
+        )
       );
       allow write: if false;
     }
