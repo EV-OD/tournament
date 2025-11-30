@@ -15,7 +15,6 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { cancelBooking, expireBooking, releaseHold } from "@/app/actions/bookings";
-import { generateInvoice } from "@/lib/generateInvoice";
 import {
   Card,
   CardContent,
@@ -362,31 +361,43 @@ const UserBookingsPage = () => {
   const handleDownloadInvoice = async (booking: any) => {
     setDownloadingId(booking.id);
     try {
-      const venue = venues[booking.venueId];
-      if (!venue || !user) {
-        toast.error("Unable to generate invoice. Missing data.");
+      if (!user) {
+        toast.error('Not authenticated');
         return;
       }
 
-      generateInvoice({
-        bookingId: booking.id,
-        venueName: venue.name,
-        venueAddress: venue.address || "Address not available",
-        date: booking.date,
-        startTime: booking.startTime,
-        endTime: booking.endTime,
-        amount: booking.amount || booking.price || 0,
-        status: booking.status,
-        userName: user.displayName || user.email || "Customer",
-        userEmail: user.email || "Not available",
-        paymentTimestamp: booking.paymentTimestamp,
-        esewaTransactionCode: booking.esewaTransactionCode,
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/invoices/${booking.id}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
-      toast.success("Invoice downloaded successfully!");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Invoice fetch failed:', err);
+        toast.error('Failed to download invoice.');
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const contentDisp = res.headers.get('content-disposition') || '';
+      const fileNameMatch = contentDisp.match(/filename="?([^";]+)"?/);
+      const fileName = fileNameMatch ? fileNameMatch[1] : `invoice-${booking.id}.pdf`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success('Invoice downloaded successfully!');
     } catch (error) {
-      console.error("Error generating invoice:", error);
-      toast.error("Failed to generate invoice.");
+      console.error('Error downloading invoice:', error);
+      toast.error('Failed to download invoice.');
     } finally {
       setDownloadingId(null);
     }
