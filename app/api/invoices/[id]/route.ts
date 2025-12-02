@@ -163,13 +163,37 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         addRow('Platform', 'Mobile App (SajiloKhel)');
 
         // Total Amount label and value
-        const formattedAmount = (Number(invoiceData.amount) || 0).toFixed(2);
+        // Total Amount label and value
+        const totalAmount = Number(invoiceData.amount) || 0;
+        const advanceAmount = booking.advanceAmount || Math.ceil((totalAmount * 16.6) / 100);
+        const dueAmount = booking.dueAmount || (totalAmount - advanceAmount);
+        
+        const formattedTotal = totalAmount.toFixed(2);
+        const formattedAdvance = advanceAmount.toFixed(2);
+        const formattedDue = dueAmount.toFixed(2);
+
         y += 6;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(12);
         doc.text('Total Amount', leftColX, y);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Rs. ${formattedAmount}`, rightColX + 120, y);
+        doc.text(`Rs. ${formattedTotal}`, rightColX + 120, y);
+        
+        y += 18;
+        doc.setFontSize(10);
+        doc.setTextColor(0, 128, 0); // Green for advance
+        doc.text('Advance Paid', leftColX, y);
+        doc.text(`Rs. ${formattedAdvance}`, rightColX + 120, y);
+        
+        y += 18;
+        doc.setTextColor(220, 53, 69); // Red for due
+        doc.text('Due Amount', leftColX, y);
+        doc.text(`Rs. ${formattedDue}`, rightColX + 120, y);
+        
+        y += 18;
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont('helvetica', 'italic');
+        doc.text('Note: The due amount is to be paid after the game at the venue.', leftColX, y);
 
         // Large centered QR below (payload is minimal to keep QR simple)
         try {
