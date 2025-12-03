@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ClientLayout from "./ClientLayout";
@@ -15,10 +16,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Sajilokhel - Premier Futsal Booking Platform",
+    default: "Sajilokhel — Book Futsal Venues & Courts in Nepal",
     template: "%s | Sajilokhel",
   },
-  description: "Discover and book the best futsal grounds near you. Real-time availability, secure payments, and instant confirmation.",
+  description:
+    "Book futsal venues and indoor courts across Nepal with Sajilokhel — real-time availability, secure payments, instant confirmation, and easy online booking for players and venue owners.",
   keywords: ["futsal", "booking", "football", "sports", "ground", "nepal", "kathmandu", "sajilokhel"],
   authors: [{ name: "Sajilokhel Team" }],
   creator: "Sajilokhel",
@@ -41,8 +43,9 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: "https://sajilokhel.com",
-    title: "Sajilokhel - Premier Futsal Booking Platform",
-    description: "Discover and book futsal grounds. Nepal's premier futsal booking platform with real-time availability and instant confirmation.",
+    title: "Sajilokhel — Book Futsal Venues & Courts in Nepal",
+    description:
+      "Book futsal venues and indoor courts across Nepal with real-time availability, secure payments, and instant confirmations on Sajilokhel.",
     siteName: "Sajilokhel",
     images: [
       {
@@ -55,8 +58,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Sajilokhel - Premier Futsal Booking Platform",
-    description: "Discover and book futsal grounds. Nepal's premier futsal booking platform.",
+    title: "Sajilokhel — Book Futsal Venues & Courts in Nepal",
+    description:
+      "Book futsal venues and indoor courts across Nepal with Sajilokhel — real-time availability, secure payments, and instant confirmations.",
     images: ["/openGraphImage.png"],
   },
 };
@@ -71,6 +75,26 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <Script id="structured-data" strategy="afterInteractive">
+          {`{
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "name": "Sajilokhel",
+            "url": "https://sajilokhel.com",
+            "logo": "https://sajilokhel.com/logo_no_bg.png",
+            "sameAs": [
+              "https://www.facebook.com/sajilokhel",
+              "https://www.instagram.com/sajilokhel"
+            ],
+            "contactPoint": [{
+              "@type": "ContactPoint",
+              "telephone": "+977-1-0000000",
+              "contactType": "customer support",
+              "areaServed": "NP",
+              "availableLanguage": "English"
+            }]
+          }`}
+        </Script>
         <ClientLayout>{children}</ClientLayout>
       </body>
     </html>

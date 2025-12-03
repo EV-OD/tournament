@@ -91,7 +91,7 @@ const Home = () => {
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
-                The Arena is{" "}
+                Book Futsal Venues in Nepal — The Arena is{" "}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-orange-400 dark:from-orange-500 dark:to-orange-200">
                   Calling
                 </span>
