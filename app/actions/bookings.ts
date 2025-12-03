@@ -5,6 +5,10 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { revalidatePath } from "next/cache";
 
 import { verifyUser, verifyManager } from "@/lib/server/auth";
+import verifyTransaction from '@/lib/esewa/verify';
+import { ESEWA_MERCHANT_CODE } from '@/lib/esewa/config';
+import { logPayment } from '@/lib/paymentLogger';
+import { bookSlot } from '@/lib/slotService.admin';
 
 export async function createBooking(
   token: string,
@@ -359,7 +363,7 @@ export async function unbookBooking(
   }
 }
 
-export async function expireBooking(token: string, bookingId: string) {
+export async function expireBooking(token: string, bookingId: string, options?: { force?: boolean }) {
   try {
     const userId = await verifyUser(token);
     const bookingRef = db.collection("bookings").doc(bookingId);
@@ -378,19 +382,132 @@ export async function expireBooking(token: string, bookingId: string) {
       return { success: false, error: "Booking is not pending" };
     }
 
-    // Check if truly expired
+    // Check if truly expired (unless forced)
     const now = Timestamp.now();
-    if (bookingData.holdExpiresAt && bookingData.holdExpiresAt.toMillis() > now.toMillis()) {
+    if (!options?.force && bookingData.holdExpiresAt && bookingData.holdExpiresAt.toMillis() > now.toMillis()) {
       return { success: false, error: "Hold has not expired yet" };
     }
 
+    // If a payment attempt was initiated, try verifying with eSewa first.
+    const txn = bookingData.esewaTransactionUuid || bookingData.esewaTransactionId || null;
+    if (txn) {
+      try {
+        // Prefer advanceAmount or esewaAmount for verification if available
+        const verifyAmount = bookingData.esewaAmount || bookingData.advanceAmount || bookingData.amount;
+        const verification = await verifyTransaction(txn, ESEWA_MERCHANT_CODE, verifyAmount);
+
+        if (verification.verified) {
+          // Payment complete — convert hold to confirmed booking (or completed if time passed)
+          try {
+            await bookSlot(bookingData.venueId, bookingData.date, bookingData.startTime, {
+              bookingId: bookingRef.id,
+              bookingType: 'website',
+              status: 'confirmed',
+              userId: bookingData.userId,
+            });
+
+            // Determine if booking should be marked completed (end time passed)
+            let newStatus: string = 'confirmed';
+            if (bookingData.date && bookingData.endTime) {
+              try {
+                const endDt = new Date(`${bookingData.date}T${bookingData.endTime}`);
+                if (endDt.getTime() <= Date.now()) {
+                  newStatus = 'completed';
+                }
+              } catch (e) {
+                // ignore parse errors — default to confirmed
+              }
+            }
+
+            await bookingRef.update({
+              status: newStatus,
+              paymentTimestamp: FieldValue.serverTimestamp(),
+              esewaTransactionCode: verification.refId || bookingData.esewaTransactionCode || null,
+              esewaTransactionUuid: txn,
+              esewaStatus: verification.status,
+              esewaAmount: verification.totalAmount || verifyAmount,
+              verifiedAt: FieldValue.serverTimestamp(),
+            });
+
+            // Log payment
+            try {
+              await logPayment({
+                transactionUuid: txn,
+                bookingId: bookingRef.id,
+                userId: bookingData.userId || '',
+                venueId: bookingData.venueId || '',
+                amount: Number(verification.totalAmount || verifyAmount || 0),
+                status: 'success',
+                method: 'esewa',
+                productCode: verification.productCode,
+                refId: verification.refId,
+                metadata: { source: 'expireBooking:verification' },
+              });
+            } catch (logErr) {
+              console.warn('Failed to log payment after verification:', logErr);
+            }
+
+            revalidatePath(`/venue/${bookingData.venueId}`);
+            return { success: true, verified: true, bookingConfirmed: true };
+          } catch (confirmErr) {
+            console.error('Error confirming booking after verification:', confirmErr);
+            // If confirmation failed, still return verified true so that
+            // the caller knows payment succeeded; admin/manual reconciliation may follow.
+            return { success: true, verified: true, bookingConfirmed: false, error: String(confirmErr) };
+          }
+        }
+
+        // If not verified and not forcing expiry, defer expiry for 5 minutes
+        if (!options?.force) {
+          const newHold = Timestamp.fromMillis(now.toMillis() + 5 * 60 * 1000);
+
+          // Update booking document's holdExpiresAt
+          await bookingRef.update({
+            holdExpiresAt: newHold,
+            // keep status as pending_payment
+          });
+
+          // Also update venueSlots held entry if present
+          if (bookingData.venueId && bookingData.date && bookingData.startTime) {
+            const venueRef = db.collection('venueSlots').doc(bookingData.venueId);
+            await db.runTransaction(async (t) => {
+              const vdoc = await t.get(venueRef);
+              if (!vdoc.exists) return;
+              const vdata = vdoc.data() as any;
+              const held = (vdata.held || []).map((h: any) => {
+                if (h.bookingId === bookingRef.id || h.esewaTransactionUuid === txn) {
+                  return { ...h, holdExpiresAt: newHold };
+                }
+                return h;
+              });
+              t.update(venueRef, { held, updatedAt: FieldValue.serverTimestamp() });
+            });
+          }
+
+          return { success: true, deferred: true, newHoldExpiresAt: newHold.toMillis() };
+        }
+
+        // If force is true, fallthrough to expire below
+      } catch (verifyErr) {
+        console.warn('Error verifying eSewa transaction during expire flow:', verifyErr);
+        // If verification failed due to network or other error, and not forced,
+        // prefer to defer rather than expire immediately.
+        if (!options?.force) {
+          const newHold = Timestamp.fromMillis(now.toMillis() + 5 * 60 * 1000);
+          await bookingRef.update({ holdExpiresAt: newHold });
+          return { success: true, deferred: true, newHoldExpiresAt: newHold.toMillis(), verifyError: String(verifyErr) };
+        }
+      }
+    }
+
+    // Default behaviour: expire booking and release hold
     await bookingRef.update({
-      status: "expired",
+      status: 'expired',
       expiredAt: FieldValue.serverTimestamp(),
     });
 
     // Also release the hold
-    const venueRef = db.collection("venueSlots").doc(bookingData.venueId);
+    const venueRef = db.collection('venueSlots').doc(bookingData.venueId);
     await db.runTransaction(async (t) => {
       const doc = await t.get(venueRef);
       if (!doc.exists) return;
