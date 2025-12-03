@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://sajilokhel.com"),
   title: {
     default: "Sajilokhel — Book Futsal Venues & Courts in Nepal",
     template: "%s | Sajilokhel",
@@ -75,26 +76,39 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <Script id="structured-data" strategy="afterInteractive">
-          {`{
+        <Script id="structured-data" strategy="afterInteractive" type="application/ld+json">
+          {JSON.stringify({
             "@context": "https://schema.org",
             "@type": "Organization",
-            "name": "Sajilokhel",
-            "url": "https://sajilokhel.com",
-            "logo": "https://sajilokhel.com/logo_no_bg.png",
-            "sameAs": [
+            name: "Sajilokhel",
+            url: "https://sajilokhel.com",
+            logo: "https://sajilokhel.com/logo_no_bg.png",
+            sameAs: [
               "https://www.facebook.com/sajilokhel",
-              "https://www.instagram.com/sajilokhel"
+              "https://www.instagram.com/sajilokhel",
             ],
-            "contactPoint": [{
-              "@type": "ContactPoint",
-              "telephone": "+977-1-0000000",
-              "contactType": "customer support",
-              "areaServed": "NP",
-              "availableLanguage": "English"
-            }]
-          }`}
+            contactPoint: [
+              {
+                "@type": "ContactPoint",
+                telephone: "+977-1-0000000",
+                contactType: "customer support",
+                areaServed: "NP",
+                availableLanguage: "English",
+              },
+            ],
+          })}
         </Script>
+        {process.env.NEXT_PUBLIC_GA_ID && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="ga-inline" strategy="afterInteractive">
+              {`window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}');`}
+            </Script>
+          </>
+        )}
         <ClientLayout>{children}</ClientLayout>
       </body>
     </html>

@@ -178,12 +178,15 @@ const Home = () => {
             </div>
 
             {/* Hero Graphic */}
-            <div className="lg:w-1/2 relative">
-              <div className="relative z-10 rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-white/10 group transform hover:scale-[1.02] transition-transform duration-500">
-                <img
+            <div className="w-full lg:w-1/2 relative">
+              <div className="relative z-10 rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-white/10 group transform hover:scale-[1.02] transition-transform duration-500 h-[400px] sm:h-[500px]">
+                <Image
                   src="https://images.unsplash.com/photo-1560272564-c83b66b1ad12?q=80&w=1949&auto=format&fit=crop"
                   alt="Futsal Player"
-                  className="w-full h-[400px] sm:h-[500px] object-cover object-center"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover object-center"
+                  priority
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-30 dark:opacity-40" />
 
@@ -201,16 +204,20 @@ const Home = () => {
                     </div>
                     <div className="flex -space-x-2">
                       <div className="w-7 h-7 rounded-full border-2 border-white dark:border-black bg-gray-600 overflow-hidden">
-                        <img
+                        <Image
                           src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80"
                           alt="User"
+                          width={28}
+                          height={28}
                           className="w-full h-full object-cover"
                         />
                       </div>
                       <div className="w-7 h-7 rounded-full border-2 border-white dark:border-black bg-gray-500 overflow-hidden">
-                        <img
+                        <Image
                           src="https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=100&q=80"
                           alt="User"
+                          width={28}
+                          height={28}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -393,10 +400,12 @@ const Home = () => {
             {/* Large item - Map Visual */}
             <div className="md:col-span-2 md:row-span-2 bg-white dark:bg-black border border-gray-200 dark:border-white/10 rounded-3xl relative overflow-hidden group hover:border-orange-500/50 transition-colors shadow-lg dark:shadow-none">
               <div className="absolute inset-0 bg-gray-200 dark:bg-black transition-colors">
-                <img
+                <Image
                   src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=1748&auto=format&fit=crop"
                   alt="Map Interface"
-                  className="w-full h-full object-cover opacity-60 dark:opacity-40 grayscale group-hover:grayscale-0 transition-all duration-700"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 66vw"
+                  className="object-cover opacity-60 dark:opacity-40 grayscale group-hover:grayscale-0 transition-all duration-700"
                 />
 
                 {/* Map Pins */}
