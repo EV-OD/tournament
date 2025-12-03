@@ -1,6 +1,6 @@
 /**
  * eSewa Payment Gateway Configuration
- * 
+ *
  * This module contains all eSewa-related constants and configuration.
  * Merchant credentials are stored in environment variables for security.
  */
@@ -9,7 +9,7 @@
 // Environment-based Configuration
 // ============================================================================
 
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === "production";
 
 // ============================================================================
 // eSewa URLs
@@ -24,7 +24,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 //   ? 'https://epay.esewa.com.np/api/epay/main/v2/form'
 //   : 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
 
-export const ESEWA_PAYMENT_URL = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
+export const ESEWA_PAYMENT_URL =
+  "https://rc-epay.esewa.com.np/api/epay/main/v2/form";
 
 /**
  * Transaction Status Verification URL
@@ -35,7 +36,8 @@ export const ESEWA_PAYMENT_URL = 'https://rc-epay.esewa.com.np/api/epay/main/v2/
 //   ? 'https://epay.esewa.com.np/api/epay/transaction/status/'
 //   : 'https://rc-epay.esewa.com.np/api/epay/transaction/status/';
 
-export const ESEWA_VERIFY_URL = 'https://rc-epay.esewa.com.np/api/epay/transaction/status/';
+export const ESEWA_VERIFY_URL =
+  "https://rc-epay.esewa.com.np/api/epay/transaction/status/";
 
 // ============================================================================
 // Merchant Configuration
@@ -46,16 +48,18 @@ export const ESEWA_VERIFY_URL = 'https://rc-epay.esewa.com.np/api/epay/transacti
  * UAT: EPAYTEST
  * Production: Your actual merchant code from eSewa
  */
-export const ESEWA_MERCHANT_CODE = process.env.NEXT_PUBLIC_ESEWA_MERCHANT_CODE || 'EPAYTEST';
+export const ESEWA_MERCHANT_CODE =
+  process.env.NEXT_PUBLIC_ESEWA_MERCHANT_CODE || "EPAYTEST";
 
 /**
  * Secret Key for HMAC-SHA256 signature generation (Server-side only)
  * UAT: 8gBm/:&EnhH.1/q
  * Production: Your actual secret key from eSewa
- * 
+ *
  * IMPORTANT: Never expose this on the client side!
  */
-export const ESEWA_SECRET_KEY = process.env.ESEWA_SECRET_KEY || '8gBm/:&EnhH.1/q';
+export const ESEWA_SECRET_KEY =
+  process.env.ESEWA_SECRET_KEY || "8gBm/:&EnhH.1/q";
 
 // ============================================================================
 // Application URLs (Callbacks)
@@ -65,18 +69,18 @@ export const ESEWA_SECRET_KEY = process.env.ESEWA_SECRET_KEY || '8gBm/:&EnhH.1/q
  * Get the base URL for the application
  */
 export const getBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     return window.location.origin;
   }
-  
+
   // Server-side
   if (process.env.NEXT_PUBLIC_APP_URL) {
     return process.env.NEXT_PUBLIC_APP_URL;
   }
-  
-  return isProduction 
-    ? 'https://tournament-swart.vercel.app/' // Replace with your production domain
-    : 'http://localhost:3000';
+
+  return isProduction
+    ? "https://www.sajilokhel.com" // Replace with your production domain
+    : "http://localhost:3000";
 };
 
 /**
@@ -101,16 +105,16 @@ export const getFailureUrl = (): string => {
  * Default values for payment parameters
  */
 export const PAYMENT_DEFAULTS = {
-  productServiceCharge: '0',
-  productDeliveryCharge: '0',
-  taxAmount: '0',
+  productServiceCharge: "0",
+  productDeliveryCharge: "0",
+  taxAmount: "0",
 } as const;
 
 /**
  * Signed field names for signature generation
  * These must be in the exact order as specified by eSewa
  */
-export const SIGNED_FIELD_NAMES = 'total_amount,transaction_uuid,product_code';
+export const SIGNED_FIELD_NAMES = "total_amount,transaction_uuid,product_code";
 
 // ============================================================================
 // Type Definitions
