@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -11,12 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Phone, Mail, MessageSquare, ArrowLeft } from "lucide-react";
 
-interface Props {
-  searchParams?: { bookingId?: string };
-}
-
-export default function RefundPage({ searchParams }: Props) {
-  const bookingId = searchParams?.bookingId;
+export default function RefundPage() {
+  const searchParams = useSearchParams();
+  const bookingId = searchParams.get("bookingId");
 
   // Placeholder contact details — update as needed in production
   const phone = "+977-9812345678";
