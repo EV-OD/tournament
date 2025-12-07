@@ -32,31 +32,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { venueId, date, startTime, endTime, amount } = body || {};
+    const { venueId, date, startTime, endTime } = body || {};
 
-    // Basic validation
-    if (
-      !venueId ||
-      !date ||
-      !startTime ||
-      amount === undefined ||
-      amount === null
-    ) {
+    // Basic validation (server will compute amount)
+    if (!venueId || !date || !startTime) {
       return NextResponse.json(
-        { error: "Missing required fields: venueId, date, startTime, amount" },
+        { error: "Missing required fields: venueId, date, startTime" },
         { status: 400 },
       );
     }
 
-    // Call the existing server action. It will verify the token internally.
-    const result = await createBooking(
-      token,
-      venueId,
-      date,
-      startTime,
-      endTime,
-      amount,
-    );
+    // Call the existing server action. It will verify the token internally and compute amount server-side.
+    const result = await createBooking(token, venueId, date, startTime, endTime);
 
     if (result?.success) {
       return NextResponse.json(

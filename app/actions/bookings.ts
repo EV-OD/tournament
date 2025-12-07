@@ -9,6 +9,8 @@ import verifyTransaction from '@/lib/esewa/verify';
 import { ESEWA_MERCHANT_CODE } from '@/lib/esewa/config';
 import { logPayment } from '@/lib/paymentLogger';
 import { bookSlot } from '@/lib/slotService.admin';
+import { getVenueSlots } from '@/lib/slotService';
+import { computeAmountsFromVenue } from '@/lib/pricing';
 
 export async function createBooking(
   token: string,
@@ -16,13 +18,37 @@ export async function createBooking(
   date: string,
   startTime: string,
   endTime: string,
-  amount: number
 ) {
   try {
     const userId = await verifyUser(token);
     const bookingId = `booking_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // 1. Check availability and Hold Slot (Transaction)
+
+    // 1. Compute authoritative amount (server-side) using venue config
+    const venueRefForPrice = db.collection('venues').doc(venueId);
+    const venueSnapForPrice = await venueRefForPrice.get();
+    if (!venueSnapForPrice.exists) {
+      throw new Error('Venue not found for pricing');
+    }
+    const venueForPrice = venueSnapForPrice.data() as any;
+
+    const venueSlotsForPrice = await getVenueSlots(venueId);
+    if (!venueSlotsForPrice || !venueSlotsForPrice.config) {
+      throw new Error('Venue slot configuration not initialized');
+    }
+
+    const slotDuration = venueSlotsForPrice.config.slotDuration || 60;
+    const pricePerHour = Number(venueForPrice?.pricePerHour ?? venueForPrice?.price ?? 0);
+    if (!pricePerHour || pricePerHour <= 0) {
+      throw new Error('Invalid venue pricing configuration');
+    }
+
+    const computed = computeAmountsFromVenue(pricePerHour, slotDuration, 1);
+    if (!computed || typeof computed.totalAmount !== 'number' || computed.totalAmount <= 0) {
+      throw new Error('Failed to compute booking amount');
+    }
+    const amountToUse = computed.totalAmount;
+
+    // 2. Check availability and Hold Slot (Transaction)
     const venueRef = db.collection("venueSlots").doc(venueId);
     
     await db.runTransaction(async (t) => {
@@ -80,6 +106,7 @@ export async function createBooking(
     });
     
     // 2. Create Booking Document
+    const amount = amountToUse;
     const advancePercentage = 16.6;
     const advanceAmount = Math.ceil((amount * advancePercentage) / 100);
     const dueAmount = amount - advanceAmount;

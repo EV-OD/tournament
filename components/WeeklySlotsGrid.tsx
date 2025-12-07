@@ -148,7 +148,6 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
     setIsProcessing(true);
 
     try {
-      const venuePrice = venueDetails?.pricePerHour || 1000;
       const token = await user.getIdToken();
 
       const result = await createBooking(
@@ -156,8 +155,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
         groundId,
         selectedSlot.date,
         selectedSlot.startTime,
-        selectedSlot.endTime,
-        venuePrice
+        selectedSlot.endTime
       );
 
       if (!result.success) {
