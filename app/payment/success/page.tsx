@@ -154,7 +154,7 @@ export default function PaymentSuccessPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-start justify-center pt-24 px-4 pb-8">
       <Card className="w-full max-w-lg shadow-xl border-0">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center mb-6">
