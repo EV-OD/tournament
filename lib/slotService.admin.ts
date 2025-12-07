@@ -123,10 +123,11 @@ export async function holdSlot(
 
     // Check existing hold
     const existingHold = (data.held || []).find((s: any) => s.date === date && s.startTime === startTime);
-    if (existingHold && existingHold.userId !== userId) {
+    // Do not allow renewing an existing unexpired hold (prevents extending)
+    if (existingHold) {
       const now = admin.firestore.Timestamp.now();
       if (existingHold.holdExpiresAt && existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
-        throw new Error("Slot is currently held by another user");
+        throw new Error("Slot is currently held");
       }
     }
 

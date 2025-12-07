@@ -133,10 +133,11 @@ export async function holdSlot(venueId: string, date: string, startTime: string,
       const alreadyBooked = data.bookings.some((item) => item.date === date && item.startTime === startTime);
       if (alreadyBooked) throw new Error("Slot is already booked");
       const existingHold = data.held.find((s) => s.date === date && s.startTime === startTime);
-      if (existingHold && existingHold.userId !== userId) {
+      // Do not allow renewing an existing unexpired hold (prevents extending)
+      if (existingHold) {
         const now = Timestamp.now();
-        if (existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
-          throw new Error("Slot is currently held by another user");
+        if (existingHold.holdExpiresAt && existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
+          throw new Error("Slot is currently held");
         }
       }
 

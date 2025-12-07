@@ -43,19 +43,19 @@ export async function createBooking(
       );
       if (isBooked) throw new Error("Slot is already booked");
       
-      // Check held by others
+      // Check for existing hold; do not renew/extend unexpired holds
       const existingHold = data.held?.find(
         (s: any) => s.date === date && s.startTime === startTime
       );
-      
-      if (existingHold && existingHold.userId !== userId) {
+
+      if (existingHold) {
         const now = Timestamp.now();
-        if (existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
-          throw new Error("Slot is held by another user");
+        if (existingHold.holdExpiresAt && existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
+          throw new Error("Slot is currently held");
         }
       }
-      
-      // Remove existing hold for this slot
+
+      // Remove any expired hold for this slot
       const held = (data.held || []).filter(
         (s: any) => !(s.date === date && s.startTime === startTime)
       );
@@ -457,46 +457,10 @@ export async function expireBooking(token: string, bookingId: string, options?: 
           }
         }
 
-        // If not verified and not forcing expiry, defer expiry for 5 minutes
-        if (!options?.force) {
-          const newHold = Timestamp.fromMillis(now.toMillis() + 5 * 60 * 1000);
-
-          // Update booking document's holdExpiresAt
-          await bookingRef.update({
-            holdExpiresAt: newHold,
-            // keep status as pending_payment
-          });
-
-          // Also update venueSlots held entry if present
-          if (bookingData.venueId && bookingData.date && bookingData.startTime) {
-            const venueRef = db.collection('venueSlots').doc(bookingData.venueId);
-            await db.runTransaction(async (t) => {
-              const vdoc = await t.get(venueRef);
-              if (!vdoc.exists) return;
-              const vdata = vdoc.data() as any;
-              const held = (vdata.held || []).map((h: any) => {
-                if (h.bookingId === bookingRef.id || h.esewaTransactionUuid === txn) {
-                  return { ...h, holdExpiresAt: newHold };
-                }
-                return h;
-              });
-              t.update(venueRef, { held, updatedAt: FieldValue.serverTimestamp() });
-            });
-          }
-
-          return { success: true, deferred: true, newHoldExpiresAt: newHold.toMillis() };
-        }
-
-        // If force is true, fallthrough to expire below
+        // If not verified, fallthrough to expiry below. We DO NOT extend holds here.
       } catch (verifyErr) {
-        console.warn('Error verifying eSewa transaction during expire flow:', verifyErr);
-        // If verification failed due to network or other error, and not forced,
-        // prefer to defer rather than expire immediately.
-        if (!options?.force) {
-          const newHold = Timestamp.fromMillis(now.toMillis() + 5 * 60 * 1000);
-          await bookingRef.update({ holdExpiresAt: newHold });
-          return { success: true, deferred: true, newHoldExpiresAt: newHold.toMillis(), verifyError: String(verifyErr) };
-        }
+        console.warn('Error verifying eSewa transaction during expire flow (will proceed to expire):', verifyErr);
+        // Do not defer or extend the hold on verification errors — expire the booking.
       }
     }
 

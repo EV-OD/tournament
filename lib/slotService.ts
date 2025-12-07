@@ -522,12 +522,12 @@ export async function holdSlot(
         throw new Error("Slot is already booked");
       }
       
-      // Check if slot is already held by someone else
+      // Check if slot is already held and not expired. Do NOT extend existing holds.
       const existingHold = data.held.find(matchSlot(date, startTime));
-      if (existingHold && existingHold.userId !== userId) {
+      if (existingHold) {
         const now = Timestamp.now();
-        if (existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
-          throw new Error("Slot is currently held by another user");
+        if (existingHold.holdExpiresAt && existingHold.holdExpiresAt.toMillis() > now.toMillis()) {
+          throw new Error("Slot is currently held");
         }
       }
       
