@@ -46,8 +46,6 @@ export async function releaseHold(venueId: string, date: string, startTime: stri
   }
 }
 
-import { verifyManager } from "@/lib/server/auth";
-
 export async function blockSlot(
   token: string,
   venueId: string,
