@@ -10,8 +10,9 @@ export type ComputedAmounts = {
   totalAmount: number; // total booking amount (same as baseAmount for now)
 };
 
-// Default advance percentage (16.6% -> 0.166)
-export const DEFAULT_ADVANCE_PERCENT = 16.6;
+// Default advance percentage applied when a new venue is created.
+// Set to 0% to attract customers; admin can override per-venue via commissionPercentage.
+export const DEFAULT_ADVANCE_PERCENT = 0;
 
 function toNumber(v: number | string | undefined | null): number {
   if (v === undefined || v === null) return 0;

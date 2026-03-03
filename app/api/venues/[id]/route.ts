@@ -71,6 +71,7 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { verifyRequestToken, getUserRole, requireAdminSDK } from "@/lib/server/auth";
 import { COLLECTIONS } from "@/lib/utils";
 
@@ -112,6 +113,7 @@ export async function PATCH(
       "name",
       "description",
       "pricePerHour",
+      "commissionPercentage",
       "imageUrls",
       "attributes",
       "address",
@@ -123,13 +125,43 @@ export async function PATCH(
       if (body[k] !== undefined) updatePayload[k] = body[k];
     }
 
-    updatePayload.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    updatePayload.updatedAt = FieldValue.serverTimestamp();
 
     await venueRef.update(updatePayload);
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
     console.error("Venue update (server) error:", err);
+    return NextResponse.json(
+      { error: err?.message || "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } },
+) {
+  const sdkError = requireAdminSDK();
+  if (sdkError) return sdkError;
+
+  try {
+    const venueId = params.id;
+    const authResult = await verifyRequestToken(req);
+    if (authResult instanceof NextResponse) return authResult;
+    const { uid } = authResult;
+
+    const userRole = await getUserRole(uid);
+    if (userRole !== "admin") {
+      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+    }
+
+    await db.collection(COLLECTIONS.VENUES).doc(venueId).delete();
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err: any) {
+    console.error("Venue delete (server) error:", err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 },

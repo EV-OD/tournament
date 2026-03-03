@@ -62,6 +62,7 @@ import { db } from "@/lib/firebase-admin";
 import {
   computeAmountsFromBooking,
   computeAmountsFromVenue,
+  DEFAULT_ADVANCE_PERCENT,
 } from "@/lib/pricing";
 import { getVenueSlots } from "@/lib/slotService";
 import { requireAdminSDK } from "@/lib/server/auth";
@@ -182,12 +183,16 @@ export async function POST(request: NextRequest) {
 
     const available = conflicts.length === 0;
 
-    // Compute amounts using venue price and slotDuration
+    // Compute amounts using venue price, slotDuration, and per-venue advance %
     const pricePerHour = Number(venue.pricePerHour || venue.price || 0);
+    const advancePercent = typeof venue.commissionPercentage === 'number'
+      ? venue.commissionPercentage
+      : DEFAULT_ADVANCE_PERCENT;
     const computed = computeAmountsFromVenue(
       pricePerHour,
       slotDuration,
       slotsCount,
+      advancePercent,
     );
 
     return NextResponse.json({

@@ -77,7 +77,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_TIMEZONE, COLLECTIONS } from "@/lib/utils";
+import { DEFAULT_ADVANCE_PERCENT } from "@/lib/pricing";
 import { verifyRequestToken, getUserRole, requireAdminSDK } from "@/lib/server/auth";
 
 export async function POST(req: Request) {
@@ -108,11 +110,12 @@ export async function POST(req: Request) {
       address = null,
       imageUrls = [],
       pricePerHour,
+      commissionPercentage,
       attributes = {},
       slotConfig,
     } = body;
 
-    if (!name || !pricePerHour || !slotConfig) {
+    if (!name || pricePerHour === undefined || pricePerHour === null || !slotConfig) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 },
@@ -128,8 +131,11 @@ export async function POST(req: Request) {
       address: address ? address.trim() : null,
       imageUrls,
       pricePerHour: parseFloat(pricePerHour),
+      commissionPercentage: typeof commissionPercentage === 'number'
+        ? Math.max(0, Math.min(100, commissionPercentage))
+        : DEFAULT_ADVANCE_PERCENT,
       attributes,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       managedBy: uid,
     });
 
@@ -144,7 +150,7 @@ export async function POST(req: Request) {
       bookings: [],
       held: [],
       reserved: [],
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     };
 
     await db.collection(COLLECTIONS.VENUE_SLOTS).doc(venueRef.id).set(venueSlots);

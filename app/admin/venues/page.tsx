@@ -1,18 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { db } from "@/lib/firebase";
-import { MapPin, Plus, Search, Trash2, Edit } from "lucide-react";
+import { db, auth } from "@/lib/firebase";
+import { MapPin, Trash2, Edit } from "lucide-react";
 import {
   collection,
   getDocs,
   query,
   orderBy,
   limit,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
 } from "firebase/firestore";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -28,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { DEFAULT_ADVANCE_PERCENT } from "@/lib/pricing/pricing";
 
 /**
  * Admin Venues Page
@@ -57,7 +54,7 @@ export default function AdminVenuesPage() {
   const [creating, setCreating] = useState<boolean>(false);
   const [newName, setNewName] = useState<string>("");
   const [newAddress, setNewAddress] = useState<string>("");
-  const [newCommission, setNewCommission] = useState<string>("0");
+  const [newCommission, setNewCommission] = useState<string>(String(DEFAULT_ADVANCE_PERCENT));
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -100,21 +97,33 @@ export default function AdminVenuesPage() {
     }
     setCreating(true);
     try {
-      const commissionValue = parseFloat(newCommission) || 0;
-      await addDoc(collection(db, "venues"), {
-        name: newName.trim(),
-        address: newAddress.trim() || null,
-        commissionPercentage: Math.max(0, Math.min(100, commissionValue)),
-        createdAt: new Date().toISOString(),
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Not authenticated");
+      const commissionValue = Math.max(0, Math.min(100, parseFloat(newCommission) || 0));
+      const res = await fetch("/api/venues", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newName.trim(),
+          address: newAddress.trim() || null,
+          commissionPercentage: commissionValue,
+          pricePerHour: 0,
+          slotConfig: { slotDuration: 60, openTime: "06:00", closeTime: "22:00" },
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Create failed");
       setNewName("");
       setNewAddress("");
-      setNewCommission("0");
+      setNewCommission(String(DEFAULT_ADVANCE_PERCENT));
       toast.success("Venue created");
       fetchVenues();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Create venue failed", err);
-      toast.error("Failed to create venue");
+      toast.error(err?.message || "Failed to create venue");
     } finally {
       setCreating(false);
     }
@@ -124,7 +133,7 @@ export default function AdminVenuesPage() {
     setEditingId(v.id);
     setEditName(v.name ?? "");
     setEditAddress(v.address ?? "");
-    setEditCommission(String(v.commissionPercentage ?? 0));
+    setEditCommission(String(v.commissionPercentage ?? DEFAULT_ADVANCE_PERCENT));
   };
 
   const cancelEdit = () => {
@@ -140,18 +149,29 @@ export default function AdminVenuesPage() {
       return;
     }
     try {
-      const commissionValue = parseFloat(editCommission) || 0;
-      await updateDoc(doc(db, "venues", id), {
-        name: editName.trim(),
-        address: editAddress.trim() || null,
-        commissionPercentage: Math.max(0, Math.min(100, commissionValue)),
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Not authenticated");
+      const commissionValue = Math.max(0, Math.min(100, parseFloat(editCommission) || 0));
+      const res = await fetch(`/api/venues/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: editName.trim(),
+          address: editAddress.trim() || null,
+          commissionPercentage: commissionValue,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Update failed");
       toast.success("Venue updated");
       cancelEdit();
       fetchVenues();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Update venue failed", err);
-      toast.error("Failed to update venue");
+      toast.error(err?.message || "Failed to update venue");
     }
   };
 
@@ -161,12 +181,19 @@ export default function AdminVenuesPage() {
     );
     if (!ok) return;
     try {
-      await deleteDoc(doc(db, "venues", id));
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Not authenticated");
+      const res = await fetch(`/api/venues/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Delete failed");
       toast.success("Venue deleted");
       setVenues((p) => p.filter((v) => v.id !== id));
-    } catch (err) {
+    } catch (err: any) {
       console.error("Delete venue failed", err);
-      toast.error("Failed to delete venue");
+      toast.error(err?.message || "Failed to delete venue");
     }
   };
 
@@ -223,10 +250,10 @@ export default function AdminVenuesPage() {
             <div className="sm:col-span-1">
               <Input
                 type="number"
-                placeholder="Commission %"
+                placeholder="Advance % (0 = full upfront payment)"
                 value={newCommission}
                 onChange={(e) => setNewCommission(e.target.value)}
-                aria-label="Commission percentage"
+                aria-label="Advance percentage"
                 min="0"
                 max="100"
                 step="0.1"
@@ -241,7 +268,7 @@ export default function AdminVenuesPage() {
                 onClick={() => {
                   setNewName("");
                   setNewAddress("");
-                  setNewCommission("0");
+                  setNewCommission(String(DEFAULT_ADVANCE_PERCENT));
                 }}
               >
                 Clear
@@ -266,7 +293,7 @@ export default function AdminVenuesPage() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Address</TableHead>
-                    <TableHead>Commission %</TableHead>
+                    <TableHead>Advance %</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -307,6 +334,7 @@ export default function AdminVenuesPage() {
                             min="0"
                             max="100"
                             step="0.1"
+                            aria-label="Advance percentage"
                           />
                         ) : (
                           <div className="text-sm font-medium">

@@ -10,7 +10,7 @@ import { ESEWA_MERCHANT_CODE } from '@/lib/esewa/config';
 import { logPayment } from '@/lib/paymentLogger';
 import { bookSlot } from '@/lib/slotService.admin';
 import { getVenueSlots } from '@/lib/slotService';
-import { computeAmountsFromVenue } from '@/lib/pricing';
+import { computeAmountsFromVenue, DEFAULT_ADVANCE_PERCENT } from '@/lib/pricing';
 import { HOLD_DURATION_MS, generateBookingId, COLLECTIONS } from '@/lib/utils';
 
 export async function createBooking(
@@ -43,7 +43,10 @@ export async function createBooking(
       throw new Error('Invalid venue pricing configuration');
     }
 
-    const computed = computeAmountsFromVenue(pricePerHour, slotDuration, 1);
+    const advancePercent = typeof venueForPrice?.commissionPercentage === 'number'
+      ? venueForPrice.commissionPercentage
+      : DEFAULT_ADVANCE_PERCENT;
+    const computed = computeAmountsFromVenue(pricePerHour, slotDuration, 1, advancePercent);
     if (!computed || typeof computed.totalAmount !== 'number' || computed.totalAmount <= 0) {
       throw new Error('Failed to compute booking amount');
     }
