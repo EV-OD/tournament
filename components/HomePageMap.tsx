@@ -18,7 +18,7 @@ L.Icon.Default.mergeOptions({
 
 const HomePageMap = () => {
   const router = useRouter();
-  const [futsalGrounds, setFutsalGrounds] = useState<any[]>([]);
+  const [venues, setVenues] = useState<any[]>([]);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
     null
   );
@@ -48,7 +48,7 @@ const HomePageMap = () => {
       );
       const snap = await getDocs(q);
       const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      setFutsalGrounds(list);
+      setVenues(list);
     };
 
     fetchGrounds();
@@ -88,7 +88,7 @@ const HomePageMap = () => {
               <Tooltip>You are here</Tooltip>
             </Marker>
           )}
-          {futsalGrounds.map((ground) => (
+          {venues.map((ground) => (
             <Marker
               key={ground.id}
               position={[ground.latitude, ground.longitude]}

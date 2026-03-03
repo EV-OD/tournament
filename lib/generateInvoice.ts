@@ -29,9 +29,9 @@ export function generateInvoice(data: InvoiceData) {
   doc.setProperties({
     title: `Invoice-${data.bookingId}`,
     subject: 'Booking Invoice',
-    author: 'Futsal Booking System',
+    author: 'Sajilokhel',
     keywords: 'invoice, booking, receipt',
-    creator: 'Futsal Booking System'
+    creator: 'Sajilokhel'
   });
 
   // Add header
@@ -42,7 +42,7 @@ export function generateInvoice(data: InvoiceData) {
   // Add company info
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text('Futsal Booking System', 105, 30, { align: 'center' });
+  doc.text('Sajilokhel - Sports Ground Booking', 105, 30, { align: 'center' });
   doc.text('Your trusted venue booking platform', 105, 36, { align: 'center' });
   
   // Add invoice details box
@@ -185,7 +185,7 @@ export function generateInvoice(data: InvoiceData) {
   doc.setFontSize(8);
   doc.setTextColor(128, 128, 128);
   doc.text('Thank you for booking with us!', 105, 278, { align: 'center' });
-  doc.text('For support, please contact: support@futsalbooking.com', 105, 283, { align: 'center' });
+  doc.text('For support, please contact: support@sajilokhel.com', 105, 283, { align: 'center' });
   doc.text(`Invoice generated on ${new Date().toLocaleString('en-US')}`, 105, 288, { align: 'center' });
 
   // Generate filename

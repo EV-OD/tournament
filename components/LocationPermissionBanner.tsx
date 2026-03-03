@@ -193,7 +193,7 @@ export const LocationPermissionBanner = ({
             Find Venues Near You
           </h3>
           <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
-            Allow location access to discover nearby futsal venues and get accurate distances.
+            Allow location access to discover nearby sports venues and get accurate distances.
           </p>
           <div className="flex gap-2 mt-3">
             <Button

@@ -5,7 +5,7 @@ export default function UserRegisterPage() {
   return (
     <AuthPageLayout
       heroImage="/images/placeholder-register.jpg"
-      heroTitle="Welcome to Futsal"
+      heroTitle="Welcome to Sajilokhel"
       heroDescription="Create an account to book courts, manage bookings and track your history."
       heroAlt="Illustration: onboarding and account creation"
     >

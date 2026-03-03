@@ -231,7 +231,7 @@ const Home = () => {
               <div className="relative z-10 rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-white/10 group transform hover:scale-[1.02] transition-transform duration-500 h-[400px] sm:h-[500px]">
                 <Image
                   src="https://images.unsplash.com/photo-1560272564-c83b66b1ad12?q=80&w=1949&auto=format&fit=crop"
-                  alt="Futsal Player"
+                  alt="Sports Ground"
                   fill
                   sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover object-center"

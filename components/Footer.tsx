@@ -20,7 +20,7 @@ const Footer = () => {
           <div className="space-y-4">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white">Sajilokhel</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-              Nepal's premier futsal booking platform. Book your game in seconds.
+              Nepal's sports ground booking platform. Book your game in seconds.
             </p>
             <div className="flex gap-3">
               <a

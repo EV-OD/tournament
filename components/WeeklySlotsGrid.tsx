@@ -640,7 +640,7 @@ const WeeklySlotsGrid: React.FC<WeeklySlotsGridProps> = ({ groundId }) => {
                 </div>
               ) : (
                 <BookingSummary
-                  venueName={venueDetails?.name || "Futsal Ground"}
+                  venueName={venueDetails?.name || "Sports Ground"}
                   address={venueDetails?.address}
                   date={formatDate(new Date(selectedSlot.date))}
                   startTime={selectedSlot.startTime}

@@ -142,7 +142,7 @@ export default function BookingForm({ venueId }: BookingFormProps) {
       <CardHeader>
         <CardTitle>Book a Slot</CardTitle>
         <CardDescription>
-          Select an available time slot to book your futsal session.
+          Select an available time slot to book your session.
         </CardDescription>
       </CardHeader>
       <CardContent>
