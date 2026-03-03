@@ -4,10 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, limit, where } from "firebase/firestore";
+
 
 const HomePageMap = dynamic(() => import("@/components/HomePageMap"), { ssr: false });
+
+// Dummy fallback values shown when real count is 0 — keeps widget lively on launch day
+const DUMMY_BOOKING_COUNT = 3;
+const DUMMY_INITIALS = ["R", "K", "S"];
 
 // Icon Components
 const MapIcon = () => (
@@ -72,36 +75,21 @@ const Home = () => {
   useEffect(() => {
     const fetchLiveStats = async () => {
       try {
-        // Venue count
-        const venueSnap = await getDocs(collection(db, "venues"));
-        setVenueCount(venueSnap.size);
-
-        // Active bookings (confirmed / pending_payment)
-        const bookingSnap = await getDocs(
-          query(
-            collection(db, "bookings"),
-            where("status", "in", ["confirmed", "CONFIRMED", "pending_payment"]),
-            limit(500)
-          )
+        const res = await fetch("/api/stats");
+        if (!res.ok) return;
+        const data = await res.json() as {
+          venueCount: number;
+          activeBookingCount: number;
+          recentInitials: string[];
+        };
+        setVenueCount(data.venueCount || 0);
+        // Use real count if > 0, otherwise fall back to dummy
+        setActiveBookingCount(
+          data.activeBookingCount > 0 ? data.activeBookingCount : DUMMY_BOOKING_COUNT
         );
-        setActiveBookingCount(bookingSnap.size);
-
-        // Recent unique booker initials (up to 3)
-        const recentSnap = await getDocs(
-          query(collection(db, "bookings"), orderBy("createdAt", "desc"), limit(20))
+        setRecentInitials(
+          data.recentInitials.length > 0 ? data.recentInitials : DUMMY_INITIALS
         );
-        const seen = new Set<string>();
-        const initials: string[] = [];
-        recentSnap.docs.forEach((d) => {
-          const data = d.data() as any;
-          const name: string = data.customerName || data.userName || data.userId || "?";
-          const initial = name.trim().charAt(0).toUpperCase();
-          if (!seen.has(initial) && initials.length < 3) {
-            seen.add(initial);
-            initials.push(initial);
-          }
-        });
-        setRecentInitials(initials);
       } catch {
         // silently ignore — stats are non-critical
       }
