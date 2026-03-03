@@ -357,23 +357,25 @@ const Home = () => {
               )}
             </div>
 
-            <div className="relative h-[500px] bg-gray-100 dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-white/10 overflow-hidden group transition-colors">
+            <div className={`relative h-[500px] rounded-3xl border border-gray-200 dark:border-white/10 overflow-hidden group transition-colors ${activeTab === UserRole.OWNER ? "bg-gray-50 dark:bg-gray-950" : "bg-gray-100 dark:bg-gray-900"}`}>
               <img
                 key={activeTab}
                 src={
                   activeTab === UserRole.PLAYER
                     ? "https://images.unsplash.com/photo-1517466787929-bc90951d0974?q=80&w=1926&auto=format&fit=crop"
-                    : "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=2070&auto=format&fit=crop"
+                    : "/manager_dashboard_view.png"
                 }
                 alt="Feature Preview"
-                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500"
+                className={`absolute inset-0 w-full h-full transition-opacity duration-500 ${
+                  activeTab === UserRole.OWNER ? "object-contain object-top p-4" : "object-cover"
+                }`}
               />
 
-              <div className="absolute bottom-0 left-0 w-full p-8 bg-gradient-to-t from-black via-black/60 to-transparent">
-                <h4 className="text-2xl font-bold text-white mb-2">
+              <div className={`absolute bottom-0 left-0 w-full p-8 bg-gradient-to-t ${activeTab === UserRole.OWNER ? "from-gray-50/95 via-gray-50/70 dark:from-gray-950/95 dark:via-gray-950/70" : "from-black via-black/60"} to-transparent`}>
+                <h4 className={`text-2xl font-bold mb-2 ${activeTab === UserRole.OWNER ? "text-gray-900 dark:text-white" : "text-white"}`}>
                   {activeTab === UserRole.PLAYER ? "Game On." : "Business Growth."}
                 </h4>
-                <p className="text-gray-300">
+                <p className={activeTab === UserRole.OWNER ? "text-gray-600 dark:text-gray-400" : "text-gray-300"}>
                   {activeTab === UserRole.PLAYER
                     ? "Join thousands of players booking daily."
                     : "Maximize your venue utilization today."}
