@@ -107,9 +107,8 @@ export async function createBooking(
     
     // 2. Create Booking Document
     const amount = amountToUse;
-    const advancePercentage = 16.6;
-    const advanceAmount = Math.ceil((amount * advancePercentage) / 100);
-    const dueAmount = amount - advanceAmount;
+    const advanceAmount = computed.advanceAmount;
+    const dueAmount = computed.totalAmount - computed.advanceAmount;
 
     const bookingData = {
       venueId,
