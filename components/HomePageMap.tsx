@@ -52,6 +52,16 @@ const HomePageMap = () => {
     };
 
     fetchGrounds();
+
+    // Request user's real location
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => handleLocationGranted([pos.coords.latitude, pos.coords.longitude]),
+        handleLocationDenied,
+        { timeout: 8000 }
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleMarkerClick = (groundId: string) => {
@@ -59,12 +69,12 @@ const HomePageMap = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8">
-      <div className="rounded-lg overflow-hidden border">
+    <div className="w-full h-full min-h-[400px]">
+      <div className="rounded-none overflow-hidden h-full">
         <MapContainer
           center={[27.7172, 85.324]}
           zoom={13}
-          style={{ height: "400px", width: "100%" }}
+          style={{ height: "100%", width: "100%", minHeight: "400px" }}
           whenReady={(e) => {
             mapRef.current = e.target;
           }}

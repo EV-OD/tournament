@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import dynamic from "next/dynamic";
+
+const HomePageMap = dynamic(() => import("@/components/HomePageMap"), { ssr: false });
 
 // Icon Components
 const MapIcon = () => (
@@ -91,16 +94,15 @@ const Home = () => {
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
-                Book Futsal Venues in Nepal — The Arena is{" "}
+                Book Sports Grounds in Nepal {" "}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-orange-400 dark:from-orange-500 dark:to-orange-200">
-                  Calling
+                  Anytime, Anywhere
                 </span>
               </h1>
 
               <p className="text-base sm:text-lg text-gray-600 dark:text-gray-400 leading-relaxed max-w-lg">
-                Nepal&apos;s #1 platform to discover, book, and manage futsal venues. No calls, no
-                hassle—just game. Discover real-time availability, instant bookings, and secure
-                payments.
+                Nepal&apos;s sports ground booking platform. Futsal, cricket, badminton, basketball
+                find availability, book instantly, and pay securely. No calls, no hassle.
               </p>
 
               {/* Search Bar */}
@@ -146,17 +148,17 @@ const Home = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => quickSearch("Lalitpur")}
+                    onClick={() => quickSearch("Badminton")}
                     className="hover:text-orange-500 transition-colors underline decoration-dotted"
                   >
-                    Lalitpur
+                    Badminton
                   </button>
                   <button
                     type="button"
-                    onClick={() => quickSearch("Indoor")}
+                    onClick={() => quickSearch("Cricket")}
                     className="hover:text-orange-500 transition-colors underline decoration-dotted"
                   >
-                    Indoor
+                    Cricket
                   </button>
                 </div>
               </div>
@@ -355,9 +357,7 @@ const Home = () => {
               )}
             </div>
 
-            <div className="relative h-[500px] bg-gradient-to-b from-gray-100 to-gray-200 dark:from-gray-800 dark:to-black rounded-3xl border border-gray-200 dark:border-white/10 overflow-hidden group transition-colors">
-              <div className="absolute inset-0 opacity-50"></div>
-
+            <div className="relative h-[500px] bg-gray-100 dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-white/10 overflow-hidden group transition-colors">
               <img
                 key={activeTab}
                 src={
@@ -366,7 +366,7 @@ const Home = () => {
                     : "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=2070&auto=format&fit=crop"
                 }
                 alt="Feature Preview"
-                className="absolute inset-0 w-full h-full object-cover opacity-60 transition-opacity duration-500 mix-blend-overlay dark:mix-blend-normal"
+                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500"
               />
 
               <div className="absolute bottom-0 left-0 w-full p-8 bg-gradient-to-t from-black via-black/60 to-transparent">
@@ -389,53 +389,28 @@ const Home = () => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-12">
             <h2 className="text-4xl font-bold text-gray-900 dark:text-white transition-colors">
-              Engineered for Football
+              Built for Every Sport
             </h2>
             <p className="text-gray-600 dark:text-gray-400 mt-4">
-              Not just a booking form. A complete ecosystem.
+              Not just a booking form. A complete sports ecosystem.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 grid-rows-2 gap-6 h-auto md:h-[600px]">
-            {/* Large item - Map Visual */}
+            {/* Large item - Map */}
             <div className="md:col-span-2 md:row-span-2 bg-white dark:bg-black border border-gray-200 dark:border-white/10 rounded-3xl relative overflow-hidden group hover:border-orange-500/50 transition-colors shadow-lg dark:shadow-none">
-              <div className="absolute inset-0 bg-gray-200 dark:bg-black transition-colors">
-                <Image
-                  src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=1748&auto=format&fit=crop"
-                  alt="Map Interface"
-                  fill
-                  sizes="(max-width: 768px) 100vw, 66vw"
-                  className="object-cover opacity-60 dark:opacity-40 grayscale group-hover:grayscale-0 transition-all duration-700"
-                />
-
-                {/* Map Pins */}
-                <div className="absolute top-1/3 left-1/4 transform hover:-translate-y-2 transition-transform duration-300 cursor-pointer">
-                  <div className="relative">
-                    <div className="w-8 h-8 bg-orange-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg shadow-orange-500/50">
-                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="absolute bottom-1/3 right-1/3 transform hover:-translate-y-2 transition-transform duration-300 cursor-pointer">
-                  <div className="w-8 h-8 bg-gray-800 dark:bg-orange-900 rounded-full border-2 border-orange-500 flex items-center justify-center shadow-lg">
-                    <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
-                    </svg>
-                  </div>
-                </div>
+              <div className="absolute inset-0">
+                <HomePageMap />
               </div>
 
-              <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-white via-white/90 dark:from-black dark:via-black/90 to-transparent">
+              <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-white via-white/90 dark:from-black dark:via-black/90 to-transparent pointer-events-none z-[1000]">
                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
                   Interactive Map Tech
                 </h3>
                 <p className="text-gray-600 dark:text-gray-300 max-w-md">
-                  Powered by OpenStreetMap & Leaflet. Visualize venues in your area with precise
-                  geolocation, get turn-by-turn directions, and check distance in real-time.
+                  Live venue map powered by OpenStreetMap. Spots your real location, shows all
+                  available grounds nearby, and lets you click straight to booking.
                 </p>
               </div>
             </div>
@@ -488,10 +463,10 @@ const Home = () => {
         <div className="absolute inset-0 bg-orange-500/5 dark:bg-orange-500/5"></div>
         <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
           <h2 className="text-5xl font-black text-gray-900 dark:text-white mb-6 transition-colors">
-            Ready to kick off?
+            Ready to play?
           </h2>
           <p className="text-xl text-gray-600 dark:text-gray-300 mb-10 transition-colors">
-            Join the fastest growing futsal community in Nepal today.
+            Join thousands of players booking sports grounds across Nepal.
           </p>
 
           <div className="flex flex-col sm:flex-row justify-center gap-4">
