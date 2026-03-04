@@ -72,6 +72,9 @@ const Home = () => {
   const [activeBookingCount, setActiveBookingCount] = useState<number | null>(null);
   const [recentInitials, setRecentInitials] = useState<string[]>([]);
 
+  // APK download
+  const [apkUrl, setApkUrl] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchLiveStats = async () => {
       try {
@@ -95,6 +98,19 @@ const Home = () => {
       }
     };
     fetchLiveStats();
+
+    // Fetch latest APK from GitHub releases
+    fetch("https://api.github.com/repos/sajilokhel/fursal_mobile/releases/latest")
+      .then((r) => r.json())
+      .then((data) => {
+        const apkAsset = data?.assets?.find(
+          (a: { name: string }) => a.name === "app-release.apk"
+        );
+        if (apkAsset?.browser_download_url) {
+          setApkUrl(apkAsset.browser_download_url);
+        }
+      })
+      .catch(() => {/* silently ignore */});
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -211,6 +227,18 @@ const Home = () => {
                 >
                   List Venue
                 </a>
+                {apkUrl && (
+                  <a
+                    href={apkUrl}
+                    download
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 text-base rounded-full font-semibold transition-all duration-300 bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/20"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18l-6-6h4V4h4v8h4l-6 6zM4 20h16" />
+                    </svg>
+                    Download App
+                  </a>
+                )}
               </div>
             </div>
 
