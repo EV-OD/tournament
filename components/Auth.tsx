@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,10 +16,12 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function Auth() {
   const { user, loading, role } = useAuth();
+  const router = useRouter();
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      router.push("/");
     } catch (err) {
       console.error("Sign out failed", err);
     }
