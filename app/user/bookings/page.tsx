@@ -416,6 +416,13 @@ const UserBookingsPage = () => {
     try {
       console.log("🔍 Verifying payment status for booking:", booking.id);
 
+      // If booking is already confirmed, no need to call eSewa
+      if (booking.status?.toLowerCase() === "confirmed") {
+        toast.info("This booking is already confirmed.");
+        setVerifyingId(null);
+        return;
+      }
+
       // Call the verification API (server will handle booking confirmation)
       const advanceAmountForVerify = (booking as any).advanceAmount;
       if (advanceAmountForVerify == null) {
@@ -463,7 +470,12 @@ const UserBookingsPage = () => {
       } else if (verificationData.status === "PENDING") {
         toast.info("Payment is still pending. Please try again later.");
       } else if (verificationData.status === "NOT_FOUND" || verificationData.status === "CANCELED") {
-        toast.error("Payment not found or was cancelled.");
+        const isCanceled = verificationData.status === "CANCELED";
+        toast.warning(
+          isCanceled
+            ? "Payment was cancelled in eSewa. You can try paying again."
+            : "Payment not yet found in eSewa. If you just completed payment, please wait a moment and try again."
+        );
         // Server will mark the booking as failed (preferred). Refresh bookings to pick up server-side change.
         const q = query(
           collection(db, "bookings"),
