@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       stale: isStale,
-      booking: booking,
+      booking: { id: bookingId, ...booking },
       venue: venue,
       user: owner,
     });
