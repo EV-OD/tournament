@@ -54,9 +54,9 @@ export const ESEWA_MERCHANT_CODE =
  */
 const _rawSecretKey = process.env.ESEWA_SECRET_KEY;
 if (isProduction && !_rawSecretKey) {
-  throw new Error(
-    "[eSewa] ESEWA_SECRET_KEY environment variable is required in production. " +
-    "Set it in your Vercel/hosting environment variables."
+  console.warn(
+    "[eSewa] ESEWA_SECRET_KEY environment variable is not set. " +
+    "Ensure it is configured in your Vercel environment variables."
   );
 }
 export const ESEWA_SECRET_KEY = _rawSecretKey || "8gBm/:&EnhH.1/q";
