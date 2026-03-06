@@ -505,6 +505,13 @@ export async function POST(request: NextRequest) {
             endTime: booking.endTime,
             amount: booking.amount,
             bookingType: booking.bookingType,
+            ...(() => {
+              const c = computeAmountsFromBooking(booking);
+              return {
+                advanceAmount: c.advanceAmount,
+                dueAmount: c.totalAmount - c.advanceAmount,
+              };
+            })(),
           },
         });
       } catch (innerDbError) {
