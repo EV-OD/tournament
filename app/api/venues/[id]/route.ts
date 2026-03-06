@@ -120,6 +120,7 @@ export async function PATCH(
       "address",
       "latitude",
       "longitude",
+      "sportType",
     ];
     const updatePayload: any = {};
     for (const k of allowedFields) {

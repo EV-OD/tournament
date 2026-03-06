@@ -15,6 +15,14 @@ import ManagerGuard from "@/components/ManagerGuard";
 import WeeklySlotsGrid from "@/components/WeeklySlotsGrid";
 import ImageManager from "@/components/ImageManager";
 import LocationPicker from "@/components/LocationPicker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SPORT_TYPES, SPORT_TYPE_LABELS, type SportType } from "@/lib/sports";
 
 interface ManagerPanelProps {
   venue: any;
@@ -40,6 +48,7 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
     longitude: venue.longitude || 85.3240,
     imageUrls: venue.imageUrls || [],
     attributes: venue.attributes || {},
+    sportType: (venue.sportType as SportType) || "futsal",
   });
 
   const [newAttributeKey, setNewAttributeKey] = useState("");
@@ -133,6 +142,7 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
         longitude: formData.longitude,
         imageUrls: formData.imageUrls,
         attributes: formData.attributes,
+        sportType: formData.sportType,
       };
 
       const resp = await fetch(`/api/venues/${venueId}`, {
@@ -172,6 +182,7 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
       longitude: venue.longitude || 85.3240,
       imageUrls: venue.imageUrls || [],
       attributes: venue.attributes || {},
+      sportType: (venue.sportType as SportType) || "futsal",
     });
     setIsEditing(false);
   };
@@ -237,6 +248,12 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
                       <label className="text-sm font-medium text-gray-600">Price per Hour</label>
                       <p className="text-2xl font-bold text-blue-600 mt-1">
                         Rs. {formData.pricePerHour.toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Sport Type</label>
+                      <p className="text-gray-900 mt-1 capitalize">
+                        {SPORT_TYPE_LABELS[formData.sportType] ?? formData.sportType}
                       </p>
                     </div>
                   </CardContent>
@@ -326,6 +343,30 @@ const ManagerPanel = ({ venue }: ManagerPanelProps) => {
                       placeholder="Enter venue address"
                       className="text-base"
                     />
+                  </div>
+
+                  {/* Sport Type */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-700">
+                      Sport Type *
+                    </label>
+                    <Select
+                      value={formData.sportType}
+                      onValueChange={(v) =>
+                        setFormData((prev) => ({ ...prev, sportType: v as SportType }))
+                      }
+                    >
+                      <SelectTrigger className="text-base">
+                        <SelectValue placeholder="Select sport type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SPORT_TYPES.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {SPORT_TYPE_LABELS[s]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {/* Description */}
