@@ -73,28 +73,58 @@ Notes:
 
 ---
 
+## ⚠️  Critical: do NOT store base64/data URLs in imageUrls
+- Never read image files with `FileReader.readAsDataURL()` and pass the result as an image URL.
+- A base64-encoded image can be 2–4 MB of text, which exceeds Firestore's 1 MB per-document limit. Firestore will reject the write with:
+  `INVALID_ARGUMENT: The value of property "array" is longer than 1048487 bytes`
+- Always upload images to UploadThing CDN first, then store only the returned short CDN URL string (e.g. `https://cdn.uploadthing.com/...`).
+
+---
+
 ## Client usage examples
 
-### Recommended: Use UploadThing client (pseudo-code / typical SDK flow)
-- The UploadThing client handles chunking, presigned flows, and will call server route(s) under the hood.
+### Recommended: `useUploadThing` hook (exact pattern used in this project)
+- `lib/uploadthing-client.ts` exports `useUploadThing` via `generateReactHelpers`.
+- The hook is used in `components/ImageManager.tsx` — the canonical image upload component.
 
-Example (React, simplified):
+Example (actual React implementation pattern):
 
-const onClientUploadComplete = (res) => {
-  // res contains server-side onUploadComplete return and file list
-  console.log('Upload result', res);
-  // Typically use returned `url`s to call your venue create/update APIs
+```tsx
+import { useUploadThing } from "@/lib/uploadthing-client";
+import { useAuth } from "@/contexts/AuthContext";
+
+const { user } = useAuth();
+
+const { startUpload } = useUploadThing("imageUploader", {
+  // Pass Firebase ID token so the server middleware can verify the uploader
+  headers: async () => {
+    if (!user) return {};
+    const token = await user.getIdToken();
+    return { Authorization: `Bearer ${token}` };
+  },
+  onClientUploadComplete: (res) => {
+    // res is an array of uploaded file objects; each has a .url (CDN URL)
+    const newUrls = res.map((f) => f.url);
+    // Store only these short CDN URLs, never base64 content
+    onImagesChange([...existingUrls, ...newUrls]);
+  },
+  onUploadError: (error) => {
+    console.error("Upload failed:", error.message);
+  },
+});
+
+// Trigger upload when user selects files:
+const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = e.target.files;
+  if (!files || files.length === 0) return;
+  e.target.value = ""; // reset so same file can be re-selected
+  await startUpload(Array.from(files));
 };
-
-// Pseudocode — follow UploadThing client library API in project
-const uploadFiles = async (files) => {
-  // SDK handles auth headers if configured or you attach token
-  const result = await uploadthingClient.upload(files, { slug: 'imageUploader' });
-  onClientUploadComplete(result);
-};
+```
 
 Notes:
-- Ensure your client includes the ID token (same token used to call `POST /api/venues`), so server middleware can verify and return `uploadedBy` metadata.
+- `Authorization: Bearer <idToken>` header must be sent so the UploadThing server middleware (in `core.ts`) can verify the user.
+- After `onClientUploadComplete` fires, the CDN URLs are safe to include in `imageUrls` for `POST /api/venues` or `PATCH /api/venues/:id`.
 
 ### Manual curl multipart example (if not using SDK)
 - This example may not work if UploadThing runtime expects additional pre-signed fields; use SDK when possible.
@@ -122,16 +152,20 @@ curl -X POST \
 ---
 
 ## Troubleshooting
-- If you see `Firebase Admin SDK not initialized` in server logs: verify `lib/firebase-admin.ts` initialization and environment variables.
-- If uploads succeed but `uploadedBy` is null: check that `Authorization` header was included and token is valid; `core.ts` returns `null` on auth failure which causes middleware to throw.
-- For runtime-specific errors consult UploadThing docs and server logs for full error details.
+- **Firestore write fails with `array is longer than 1048487 bytes`:** Image data URLs (base64) were stored instead of CDN URLs. See the warning section above — always use UploadThing and store only the returned `url`.
+- **`Firebase Admin SDK not initialized`** in server logs: verify `lib/firebase-admin.ts` initialization and environment variables.
+- **`uploadedBy` is null / upload rejected:** Check that `Authorization: Bearer <idToken>` header was included and that the token is fresh. The `core.ts` middleware logs the reason when auth fails.
+- **Same file not re-selectable in `<input type="file">`:** Reset `e.target.value = ""` after triggering the upload (already done in `ImageManager.tsx`).
+- For other runtime-specific errors consult UploadThing docs and server logs for full error details.
 
 ---
 
 ## References
 - Route: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200)
 - Router/core: [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200)
-- Example server `onUploadComplete` behavior is in `core.ts` (returns `{ uploadedBy: metadata.userId }`).
+- Client helper: [lib/uploadthing-client.ts](lib/uploadthing-client.ts) (exports `useUploadThing` and `uploadFiles`)
+- Usage in UI: [components/ImageManager.tsx](components/ImageManager.tsx) — canonical example of `useUploadThing` with auth headers
+- `onUploadComplete` in `core.ts` returns `{ uploadedBy: metadata.userId }` server-side.
 
 ---
 

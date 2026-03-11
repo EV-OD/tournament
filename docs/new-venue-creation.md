@@ -100,15 +100,20 @@ References: `app/api/venues/route.ts` and `lib/slotService.admin.ts` for `initia
 
 ---
 
-## Image upload integration (recommended)
-- Use UploadThing routes: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200) with router in [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200).
-- Typical flow:
-  1. Client uploads images with UploadThing client; the server middleware verifies the Bearer token and attaches `userId` metadata.
-  2. UploadThing returns file metadata including `url` for the uploaded file.
-  3. Client collects returned `url`s and sends them in `imageUrls` array to `POST /api/venues`.
-- The server stores `imageUrls` array as-is on the venue document.
+## Image upload integration (required — do not use base64)
 
-Security: Ensure UploadThing middleware is configured to reject unauthorized uploads; the project already verifies ID tokens in `core.ts`.
+> **Warning:** Never store raw base64 / data URLs in `imageUrls`. Firestore has a 1 MB document size limit. A single base64-encoded image can exceed this and cause the write to fail with `INVALID_ARGUMENT: The value of property "array" is longer than 1048487 bytes`. Always upload via UploadThing first and store only the returned short CDN URL.
+
+- Use UploadThing routes: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200) with router in [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200).
+- Client helper: [lib/uploadthing-client.ts](lib/uploadthing-client.ts) — use the exported `useUploadThing("imageUploader", { headers })` hook.
+- Correct flow:
+  1. Call `startUpload(files)` from the `useUploadThing` hook, passing `Authorization: Bearer <idToken>` in the `headers` option so the server middleware can verify the uploader.
+  2. In `onClientUploadComplete`, collect `res.map(f => f.url)` — these are short CDN URLs like `https://cdn.uploadthing.com/...`.
+  3. Pass those URLs as the `imageUrls` array to `POST /api/venues`.
+- The server stores the `imageUrls` array as-is in the venue document; each entry must be a URL string.
+- See [components/ImageManager.tsx](components/ImageManager.tsx) for the canonical implementation.
+
+Security: UploadThing middleware already verifies ID tokens via Firebase Admin in `core.ts`. Uploads from unauthenticated callers are rejected.
 
 ---
 
