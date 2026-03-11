@@ -1,88 +1,197 @@
 **Overview**
-- **Purpose:** Docs for manager-facing venue creation and editing flows, APIs, and effects.
+- **Purpose:** Detailed reference for all manager-facing venue editing actions, required API calls, request/response schemas, and server-side effects.
 - **Audience:** Frontend engineers, mobile clients, and backend maintainers.
 
-**APIs**
-- **Create Venue:** POST /api/venues — [app/api/venues/route.ts](app/api/venues/route.ts#L1-L220)
-  - **Auth:** `Authorization: Bearer <idToken>`; role must be `manager` or `admin`.
-  - **Body:** `name`, `pricePerHour`, `slotConfig` (required), optional `description`, `latitude`, `longitude`, `address`, `imageUrls`, `attributes`, `sportType`, `advancePercentage`, `platformCommission`.
-  - **Response:** 201 { id }
-  - **Side-effects:** creates `venues/{id}` and initializes `venueSlots/{id}` (canonical schedule document).
+---
 
-- **Update Venue (metadata/pricing/images/etc):** PATCH /api/venues/:id — [app/api/venues/[id]/route.ts](app/api/venues/[id]/route.ts#L1-L200)
-  - **Auth:** `Authorization: Bearer <idToken>`; caller must be `admin` or the venue's `managedBy` uid.
-  - **Whitelisted fields:** `name`, `description`, `pricePerHour`, `advancePercentage`, `platformCommission`, `imageUrls`, `attributes`, `address`, `latitude`, `longitude`, `sportType`.
-  - **Response:** 200 { ok: true }
-  - **Notes:** Only listed fields are applied; `updatedAt` is set server-side.
+## Quick index
+- Metadata edits: `PATCH /api/venues/:id`
+- Pricing edits: `PATCH /api/venues/:id`
+- Images: upload via UploadThing → `PATCH /api/venues/:id`
+- Attributes: `PATCH /api/venues/:id`
+- Slot config update (bulk generation): `POST /api/slots/generate` and `updateSlotConfig` helper
+- Slot operations: `POST /api/slots/hold`, `POST /api/slots/reserve`, `POST /api/slots/unbook`, plus helpers `holdSlot`, `reserveSlot`, `unbookSlot`
 
-- **Delete Venue:** DELETE /api/venues/:id — [app/api/venues/[id]/route.ts](app/api/venues/[id]/route.ts#L1-L200)
-  - **Auth:** admin-only.
-  - **Response:** 200 { ok: true }
+---
 
-- **Image Uploads:** Upload endpoints (UploadThing)
-  - See [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200) and core at [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200).
-  - Client uploads images, receives URLs; `imageUrls` is an array stored on the venue document.
+## Common headers
+- `Authorization: Bearer <idToken>` (required for manager/admin actions).
+- `Content-Type: application/json` for JSON bodies.
 
-- **Slot Management (schedule editing):**
-  - POST /api/slots/generate — [app/api/slots/generate/route.ts](app/api/slots/generate/route.ts#L1-L200)
-    - **Purpose:** (Manager) generate slots for a venue for a date range / daily times.
-    - **Auth:** manager or admin.
-    - **Body:** `venueId`, `startTime`, `endTime`, optional `slotDuration`, `days`.
-  - POST /api/slots/hold — [app/api/slots/hold/route.ts](app/api/slots/hold/route.ts#L1-L200)
-    - **Purpose:** Temporarily hold a slot (used in booking flows).
-  - POST /api/slots/reserve — [app/api/slots/reserve/route.ts](app/api/slots/reserve/route.ts#L1-L200)
-    - **Purpose:** Reserve a slot (confirm booking). May be used by managers when creating bookings manually.
-  - POST /api/slots/unbook — [app/api/slots/unbook/route.ts](app/api/slots/unbook/route.ts#L1-L200)
-    - **Purpose:** Remove a booking / free a slot.
-  - **Implementation details:** These delegate to `lib/slotService.admin.ts` and modify the `venueSlots/{venueId}` canonical document. See [lib/slotService.admin.ts](lib/slotService.admin.ts#L1-L200).
+---
 
-**Supporting services & helpers**
-- **Auth helpers:** verifyRequestToken, getUserRole, isManagerOrAdmin — [lib/server/auth.ts](lib/server/auth.ts#L1-L200)
-- **Firestore constants:** `COLLECTIONS` and `DEFAULT_TIMEZONE` — [lib/utils.ts](lib/utils.ts#L1-L200)
+## Create Venue (server)
+- Endpoint: `POST /api/venues` — implementation: [app/api/venues/route.ts](app/api/venues/route.ts#L1-L220)
+- Auth: Bearer token. Allowed roles: `manager` or `admin`.
+- Required body (JSON):
+  - `name` (string)
+  - `pricePerHour` (number|string)
+  - `slotConfig` (object) — used to initialize `venueSlots.config`
+- Optional body fields:
+  - `description`, `latitude`, `longitude`, `address`, `imageUrls` (string[]), `attributes` (object), `sportType`, `advancePercentage`, `platformCommission`.
+- Success: 201 { id: "<venueId>" }
+- Errors:
+  - 400 Missing required fields
+  - 401 Unauthorized / Invalid token
+  - 403 Insufficient permissions
+  - 500 Server misconfiguration or other error
+- Side-effects:
+  - Creates `venues/{id}` document with provided fields and `managedBy` set to caller uid.
+  - Initializes `venueSlots/{id}` with canonical structure (config, blocked, bookings, held, reserved).
+- Example request:
 
-**Editing types (what managers can edit)**
-- **Metadata:** `name`, `description`, `address`, `latitude`, `longitude`, `sportType`.
-- **Media:** `imageUrls` (managed by client uploads via UploadThing, then saved on the venue doc).
-- **Pricing:** `pricePerHour`, `advancePercentage`, `platformCommission`.
-- **Attributes:** Arbitrary `attributes` object for extensible fields (e.g., `covered`, `turfType`).
-- **Schedule / Slots:** Use the slots APIs to generate or modify available time slots; changes affect `venueSlots/{venueId}`.
+  POST /api/venues
+  Headers: Authorization + Content-Type
+  Body:
+  {
+    "name": "Green Field",
+    "pricePerHour": "500",
+    "slotConfig": { "slotDuration": 60, "timezone": "Asia/Kathmandu" },
+    "imageUrls": ["https://.../1.jpg"]
+  }
 
-**Flows (end-to-end)**
-- **Create venue (manager UI):**
-  1. Client collects form + images.
-  2. Upload images to UploadThing endpoint → receive `imageUrls`.
-  3. POST /api/venues with form + `imageUrls` and `slotConfig`.
-  4. Server creates `venues/{id}` and `venueSlots/{id}` (returns `id`).
+---
 
-- **Edit metadata or pricing (manager UI):**
-  1. Client prepares patch body with changed fields (only whitelisted fields accepted).
-  2. PATCH /api/venues/:id with Bearer token.
-  3. Server verifies role (admin or `managedBy`) and applies changes, sets `updatedAt`.
+## Update Venue (metadata, pricing, images, attributes)
+- Endpoint: `PATCH /api/venues/:id` — implementation: [app/api/venues/[id]/route.ts](app/api/venues/[id]/route.ts#L1-L200)
+- Auth: Bearer token. Caller must be `admin` or `venue.managedBy === uid`.
+- Allowed (whitelisted) fields (JSON body):
+  - `name`, `description`, `pricePerHour`, `advancePercentage`, `platformCommission`, `imageUrls` (string[]), `attributes` (object), `address`, `latitude`, `longitude`, `sportType`.
+- Success: 200 { ok: true }
+- Errors:
+  - 401 Unauthorized / Invalid token
+  - 403 Insufficient permissions
+  - 404 Venue not found
+  - 500 Server error
+- Behavior:
+  - Only whitelisted fields are applied; other keys are ignored.
+  - Sets `updatedAt` with server timestamp.
+- Example request:
 
-- **Edit images:**
-  1. Upload new images to UploadThing → get new URLs.
-  2. PATCH /api/venues/:id with `imageUrls` array (replace or reorder as desired).
+  PATCH /api/venues/abc123
+  Headers: Authorization + Content-Type
+  Body:
+  {
+    "name": "New Name",
+    "pricePerHour": 900,
+    "imageUrls": ["https://.../a.jpg", "https://.../b.jpg"]
+  }
 
-- **Edit schedule / slots:**
-  1. For bulk schedule changes, use POST /api/slots/generate (manager/admin).
-  2. To hold/reserve/unbook individual slots, use the respective slot endpoints.
-  3. These endpoints update `venueSlots/{venueId}`; booking entries may also touch `bookings` collection depending on flow.
+---
 
-**Responses, errors & permissions**
-- **401 Unauthorized:** Missing or invalid token (returned by `verifyRequestToken`).
-- **403 Forbidden:** Caller is not manager/admin or not the venue owner for PATCH.
-- **404 Not Found:** Venue id not found for PATCH/DELETE.
-- **400 Bad Request:** Missing required fields when creating venues.
-- **500 Server Error:** Admin SDK misconfiguration or unexpected errors.
+## Delete Venue
+- Endpoint: `DELETE /api/venues/:id` — implementation: [app/api/venues/[id]/route.ts](app/api/venues/[id]/route.ts#L1-L200)
+- Auth: Bearer token; only role `admin` may delete.
+- Success: 200 { ok: true }
+- Notes: Deleting a venue may leave orphaned `venueSlots` or `slots` documents — verify app semantics before calling in production.
 
-**Security notes & known issues**
-- PII risk: `venueSlots` has historically contained booking PII; see SECURITY_AUDIT.md for mitigation suggestions: [SECURITY_AUDIT.md](SECURITY_AUDIT.md#L1-L200).
-- Always validate coordinates and numeric fields on client-side and optionally server-side for stronger guarantees.
+---
 
-**References (code)**
-- Venue routes: [app/api/venues/route.ts](app/api/venues/route.ts#L1-L220)
+## Image uploads (recommended flow)
+- Upload flow: client uploads images to UploadThing route and uses returned URLs in `imageUrls`.
+- Upload endpoints: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200) with router in [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200).
+- Auth: UploadThing middleware verifies Bearer token (calls Firebase Admin `verifyIdToken`) and rejects if unauthorized.
+- Typical response: upload runtime returns file metadata including `url`; collect these and PATCH the venue's `imageUrls`.
+- Example:
+  1. Upload file via UploadThing client → receive `{ file: { url: "https://..." } }`.
+  2. PATCH /api/venues/:id with `imageUrls` array.
+
+---
+
+## Slots: config, generation & single-slot operations
+Slot data is stored in two places:
+- `slots/{slotId}` documents (individual slot records)
+- `venueSlots/{venueId}` canonical document (aggregates bookings, held, reserved arrays)
+
+### Update slot configuration
+- API: There is no direct public PATCH for slotConfig on venue doc; the creation flow sets it and `lib/slotService.admin.updateSlotConfig` exists.
+- Helper: `updateSlotConfig(venueId, config)` — see [lib/slotService.admin.ts](lib/slotService.admin.ts#L1-L200).
+
+### Generate slots (bulk)
+- Endpoint: `POST /api/slots/generate` — [app/api/slots/generate/route.ts](app/api/slots/generate/route.ts#L1-L200)
+- Auth: manager or admin (Bearer token). Uses `isManagerOrAdmin`.
+- Body:
+  - `venueId` (required)
+  - `startTime` (required) e.g. "08:00"
+  - `endTime` (required) e.g. "22:00"
+  - `slotDuration` (optional, minutes, default 60)
+  - `days` (optional, default 7)
+- Success: 200 { ok: true }
+- Side-effects: Creates/merges `slots/{slotId}` documents and updates `venues/{id}` start/end times.
+
+### Place a hold on a slot (temporary, for payment)
+- Endpoint: `POST /api/slots/hold` — [app/api/slots/hold/route.ts](app/api/slots/hold/route.ts#L1-L200)
+- Auth: Bearer token (any authenticated user); the holder becomes `userId` on slot.
+- Body:
+  - `slotId` (required)
+  - `venueId` (required)
+  - `holdDurationMinutes` (optional, default 5)
+- Success: 200 { ok: true, bookingId: "<id>" }
+- Errors: 400/401/404/409/500 with messages like "Slot not available" or "Slot currently held".
+- Side-effects: Creates `bookings/{id}` with status `PENDING_PAYMENT`, updates `slots/{slotId}` to status `HELD` and writes a held entry into `venueSlots` via `holdSlot` helper.
+
+### Reserve a slot (physical / manager-created booking)
+- Endpoint: `POST /api/slots/reserve` — [app/api/slots/reserve/route.ts](app/api/slots/reserve/route.ts#L1-L200)
+- Auth: manager or admin (Bearer token)
+- Body:
+  - `slotId`, `venueId`, `customerName`, `customerPhone` (required), `notes` (optional)
+- Success: 200 { ok: true, bookingId }
+- Side-effects: Creates `bookings/{id}` (bookingType: "physical", status: "confirmed"), updates `slots/{slotId}` to `RESERVED`, and calls `reserveSlot` helper to mirror into `venueSlots`.
+
+### Unbook (remove) a physical booking
+- Endpoint: `POST /api/slots/unbook` — [app/api/slots/unbook/route.ts](app/api/slots/unbook/route.ts#L1-L200)
+- Auth: manager or admin
+- Body: `slotId`, `bookingId`, `venueId` (all required)
+- Success: 200 { ok: true }
+- Behavior: Deletes booking (only `physical` bookingType allowed), sets `slots/{slotId}` back to `AVAILABLE`, removes booking entry from `venueSlots` via `unbookSlot` helper.
+
+### Helpers (server-side, elevated privileges)
+- `holdSlot(venueId, date, startTime, userId, bookingId, holdDurationMinutes)` — adds held entry to `venueSlots`.
+- `reserveSlot(venueId, date, startTime, reservedBy, note?)` — adds reserved entry and returns a booking id.
+- `unbookSlot(venueId, date, startTime)` — removes booking entry from `venueSlots`.
+- `bookSlot(venueId, date, startTime, bookingData)` — converts a hold into a confirmed booking inside `venueSlots`.
+
+---
+
+## Error patterns & HTTP codes
+- 401 Unauthorized: missing/invalid bearer token (see `verifyRequestToken`).
+- 403 Forbidden: insufficient permissions (role check failed or manager check failed).
+- 404 Not Found: venue/slot/booking does not exist.
+- 409 Conflict: slot unavailable/held/booked conflict conditions.
+- 400 Bad Request: missing required fields.
+- 500 Internal Server Error: Admin SDK not initialized or unexpected exceptions.
+
+---
+
+## Security notes & recommendations
+- `venueSlots` currently stores booking-level details (including `customerName`/`customerPhone` for physical bookings). See [SECURITY_AUDIT.md](SECURITY_AUDIT.md#L1-L200) — consider moving PII to a restricted collection or restricting reads to managers only.
+- Validate numeric ranges (price, percentages) and coordinate ranges on the client and optionally on the server.
+
+---
+
+## Examples (curl)
+- Update metadata example:
+
+  curl -X PATCH \
+    -H "Authorization: Bearer <idToken>" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"New Name","pricePerHour":800}' \
+    https://your-host.example.com/api/venues/abc123
+
+- Hold slot example (user flow):
+
+  curl -X POST \
+    -H "Authorization: Bearer <idToken>" \
+    -H "Content-Type: application/json" \
+    -d '{"slotId":"venue_2026-03-11_1800","venueId":"venue","holdDurationMinutes":10}' \
+    https://your-host.example.com/api/slots/hold
+
+---
+
+## References (code)
+- Venue create: [app/api/venues/route.ts](app/api/venues/route.ts#L1-L220)
 - Venue update/delete: [app/api/venues/[id]/route.ts](app/api/venues/[id]/route.ts#L1-L200)
-- Slot APIs: [app/api/slots](app/api/slots)
-- Slot admin helper: [lib/slotService.admin.ts](lib/slotService.admin.ts#L1-L200)
+- UploadThing routes: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200) and [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200)
+- Slot APIs: [app/api/slots/generate/route.ts](app/api/slots/generate/route.ts#L1-L200), [app/api/slots/hold/route.ts](app/api/slots/hold/route.ts#L1-L200), [app/api/slots/reserve/route.ts](app/api/slots/reserve/route.ts#L1-L200), [app/api/slots/unbook/route.ts](app/api/slots/unbook/route.ts#L1-L200)
+- Slot helpers: [lib/slotService.admin.ts](lib/slotService.admin.ts#L1-L400)
 - Auth helpers: [lib/server/auth.ts](lib/server/auth.ts#L1-L200)
-- Upload helpers: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200)
