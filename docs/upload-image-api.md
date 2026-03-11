@@ -12,7 +12,8 @@ Primary implementation files:
 - Primary endpoint(s): `GET /api/uploadthing` and `POST /api/uploadthing` (created via UploadThing `createRouteHandler`).
 - Auth: Bearer ID token required by the router middleware (see `core.ts`).
 - File route slug in `ourFileRouter`: `imageUploader` with limits `maxFileSize: 4MB`, `maxFileCount: 5`.
-- Typical response: UploadThing runtime returns JSON with uploaded file metadata including `url` for each file.
+- **Images are compressed client-side to ≤ 100 KB before upload** (see `compressImage` in `ImageManager.tsx`).
+- Typical response: UploadThing runtime returns JSON with uploaded file metadata. Use `file.ufsUrl` for the CDN URL (`file.url` is deprecated since v7 and will be removed in v9).
 
 ---
 
@@ -90,41 +91,49 @@ Notes:
 Example (actual React implementation pattern):
 
 ```tsx
+import { useRef, useState } from "react";
 import { useUploadThing } from "@/lib/uploadthing-client";
 import { useAuth } from "@/contexts/AuthContext";
 
 const { user } = useAuth();
 
+// useRef prevents stale-closure issues: useUploadThing memoises its options
+// from the first render, so callbacks must read current values via a ref.
+const imagesRef = useRef(currentImages);
+imagesRef.current = currentImages;
+
 const { startUpload } = useUploadThing("imageUploader", {
-  // Pass Firebase ID token so the server middleware can verify the uploader
+  // Pass Firebase ID token so the server middleware can verify the uploader.
+  // Return HeadersInit — never return `{ key: undefined }` (causes TS error).
   headers: async () => {
-    if (!user) return {};
-    const token = await user.getIdToken();
-    return { Authorization: `Bearer ${token}` };
+    const token = user ? await user.getIdToken() : null;
+    return token ? { Authorization: `Bearer ${token}` } : ({} as HeadersInit);
   },
   onClientUploadComplete: (res) => {
-    // res is an array of uploaded file objects; each has a .url (CDN URL)
-    const newUrls = res.map((f) => f.url);
-    // Store only these short CDN URLs, never base64 content
-    onImagesChange([...existingUrls, ...newUrls]);
+    // Use f.ufsUrl — f.url is deprecated in v7, removed in v9.
+    const newUrls = res.map((f) => f.ufsUrl ?? f.url).filter(Boolean);
+    onImagesChange([...imagesRef.current, ...newUrls]);
   },
   onUploadError: (error) => {
     console.error("Upload failed:", error.message);
   },
 });
 
-// Trigger upload when user selects files:
+// Compress then upload when the user picks files:
 const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = e.target.files;
-  if (!files || files.length === 0) return;
-  e.target.value = ""; // reset so same file can be re-selected
-  await startUpload(Array.from(files));
+  // Snapshot FileList BEFORE resetting input — resetting empties the live FileList.
+  const files = Array.from(e.target.files ?? []);
+  if (files.length === 0) return;
+  e.target.value = ""; // allow re-selecting the same file
+  const compressed = await Promise.all(files.map(compressImage)); // < 100 KB each
+  await startUpload(compressed);
 };
 ```
 
-Notes:
-- `Authorization: Bearer <idToken>` header must be sent so the UploadThing server middleware (in `core.ts`) can verify the user.
-- After `onClientUploadComplete` fires, the CDN URLs are safe to include in `imageUrls` for `POST /api/venues` or `PATCH /api/venues/:id`.
+Key implementation notes:
+- `Authorization` header value must always be `string | undefined` — returning `{ Authorization: undefined }` is a TS error because `HeadersInit` requires `Record<string, string>`. Use `({} as HeadersInit)` for the unauthenticated case.
+- Use `imagesRef.current` (not the closed-over `images` prop) so `onClientUploadComplete` always appends to the real current list.
+- Use `f.ufsUrl ?? f.url` — `f.url` is deprecated since UploadThing v7.
 
 ### Manual curl multipart example (if not using SDK)
 - This example may not work if UploadThing runtime expects additional pre-signed fields; use SDK when possible.
@@ -152,10 +161,12 @@ curl -X POST \
 ---
 
 ## Troubleshooting
-- **Firestore write fails with `array is longer than 1048487 bytes`:** Image data URLs (base64) were stored instead of CDN URLs. See the warning section above — always use UploadThing and store only the returned `url`.
+- **Firestore write fails with `array is longer than 1048487 bytes`:** Image data URLs (base64) were stored instead of CDN URLs. See the warning section above — always use UploadThing and store only the returned `ufsUrl`.
+- **`presignedUrls: []` / UploadThing sends `fileKeys: []` and returns 400:** The `FileList` was snapshotted after `e.target.value = ""` reset it. Snapshot it first: `const files = Array.from(e.target.files ?? [])` before any reset.
+- **Upload completes but existing images disappear:** Stale closure in `onClientUploadComplete` — use `imagesRef.current` instead of the prop directly (the hook memoises callbacks from first render).
+- **TS error `Type 'undefined' is not assignable to type 'string'` on `headers`:** Never return `{ Authorization: undefined }`. Use `({} as HeadersInit)` for the unauthenticated fallback.
+- **`file.url` deprecation warning in server logs:** Switch to `f.ufsUrl ?? f.url`; `file.url` is removed in UploadThing v9.
 - **`Firebase Admin SDK not initialized`** in server logs: verify `lib/firebase-admin.ts` initialization and environment variables.
-- **`uploadedBy` is null / upload rejected:** Check that `Authorization: Bearer <idToken>` header was included and that the token is fresh. The `core.ts` middleware logs the reason when auth fails.
-- **Same file not re-selectable in `<input type="file">`:** Reset `e.target.value = ""` after triggering the upload (already done in `ImageManager.tsx`).
 - For other runtime-specific errors consult UploadThing docs and server logs for full error details.
 
 ---

@@ -106,11 +106,14 @@ References: `app/api/venues/route.ts` and `lib/slotService.admin.ts` for `initia
 
 - Use UploadThing routes: [app/api/uploadthing/route.ts](app/api/uploadthing/route.ts#L1-L200) with router in [app/api/uploadthing/core.ts](app/api/uploadthing/core.ts#L1-L200).
 - Client helper: [lib/uploadthing-client.ts](lib/uploadthing-client.ts) — use the exported `useUploadThing("imageUploader", { headers })` hook.
+- **Images are compressed to ≤ 100 KB before upload** using the Canvas API inside `compressImage()` (no external dependency). See `components/ImageManager.tsx`.
 - Correct flow:
-  1. Call `startUpload(files)` from the `useUploadThing` hook, passing `Authorization: Bearer <idToken>` in the `headers` option so the server middleware can verify the uploader.
-  2. In `onClientUploadComplete`, collect `res.map(f => f.url)` — these are short CDN URLs like `https://cdn.uploadthing.com/...`.
-  3. Pass those URLs as the `imageUrls` array to `POST /api/venues`.
-- The server stores the `imageUrls` array as-is in the venue document; each entry must be a URL string.
+  1. Snapshot `e.target.files` into a plain array **before** resetting `e.target.value` (resetting empties the live `FileList`).
+  2. Call `compressImage` on every file (parallel `Promise.all`) to get compressed `File` objects.
+  3. Call `startUpload(compressed)` from the `useUploadThing` hook, passing `Authorization: Bearer <idToken>` in the `headers` option.
+  4. In `onClientUploadComplete`, collect `res.map(f => f.ufsUrl ?? f.url)` — these are short CDN URLs like `https://utfs.io/f/...`. Use `imagesRef.current` (not the prop) to avoid stale-closure issues.
+  5. Pass those URLs as the `imageUrls` array to `POST /api/venues`.
+- The server stores the `imageUrls` array as-is in the venue document; each entry must be a URL string, never a base64 blob.
 - See [components/ImageManager.tsx](components/ImageManager.tsx) for the canonical implementation.
 
 Security: UploadThing middleware already verifies ID tokens via Firebase Admin in `core.ts`. Uploads from unauthenticated callers are rejected.
