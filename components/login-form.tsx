@@ -19,6 +19,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   sendPasswordResetEmail,
+  sendEmailVerification,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -52,8 +53,32 @@ export function LoginForm({
     router.replace(url);
   };
 
-  const checkUserDocAndRedirect = async (uid: string, userEmail?: string) => {
+  const checkUserDocAndRedirect = async (
+    uid: string,
+    userEmail?: string,
+    emailVerified: boolean = false,
+  ) => {
     try {
+      // Check if user's email is verified
+      if (!emailVerified) {
+        // Send verification email via Firebase
+        try {
+          const user = auth.currentUser;
+          if (user) {
+            await sendEmailVerification(user);
+            console.log("Verification email sent!");
+          }
+        } catch (err) {
+          console.warn("Failed to send verification email:", err);
+        }
+
+        // Sign out and redirect to verification page
+        await signOut(auth);
+        const url = `/auth/verification${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ""}`;
+        router.replace(url);
+        return;
+      }
+
       const userRef = doc(db, "users", uid);
       const snap = await getDoc(userRef);
       if (snap.exists()) {
@@ -96,7 +121,11 @@ export function LoginForm({
       const cred = await signInWithEmailAndPassword(auth, email, password);
       const user = cred.user;
       if (!user) throw new Error("No user returned from sign-in");
-      await checkUserDocAndRedirect(user.uid, user.email ?? undefined);
+      await checkUserDocAndRedirect(
+        user.uid,
+        user.email ?? undefined,
+        user.emailVerified,
+      );
     } catch (err: any) {
       console.error("Email sign-in error:", err);
       const info = mapAuthError(err);
@@ -119,7 +148,11 @@ export function LoginForm({
       const cred = await signInWithPopup(auth, provider);
       const user = cred.user;
       if (!user) throw new Error("No user returned from Google sign-in");
-      await checkUserDocAndRedirect(user.uid, user.email ?? undefined);
+      await checkUserDocAndRedirect(
+        user.uid,
+        user.email ?? undefined,
+        user.emailVerified,
+      );
     } catch (err: any) {
       console.error("Google sign-in error:", err);
       const info = mapAuthError(err);

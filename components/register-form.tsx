@@ -17,6 +17,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
 } from "firebase/auth";
 import { doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -116,15 +117,20 @@ export function RegisterForm({
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const user = cred.user;
       if (!user) throw new Error("Registration returned no user");
+
       await safeUpsertUserDoc(user.uid, {
         email: user.email,
         displayName: name.trim(),
         photoURL: user.photoURL ?? null,
       });
-      // Redirect to next; if next is not provided use role-specific fallback
-      const destination =
-        next && next !== "/" ? next : role === "manager" ? "/manager/dashboard" : "/";
-      router.replace(destination);
+
+      // Send verification email via Firebase
+      await sendEmailVerification(user);
+      console.log("Verification email sent!");
+
+      // Redirect to verification page (logout happens there)
+      const verificationUrl = `/auth/verification?email=${encodeURIComponent(user.email || "")}`;
+      router.replace(verificationUrl);
     } catch (err: any) {
       console.error("Email registration error:", err);
       const info = mapAuthError(err);
@@ -145,16 +151,21 @@ export function RegisterForm({
       const cred = await signInWithPopup(auth, provider);
       const user = cred.user;
       if (!user) throw new Error("No user returned from Google sign-in");
+
       // Ensure users/{uid} doc exists
       await safeUpsertUserDoc(user.uid, {
         email: user.email,
         displayName: user.displayName ?? (name.trim() || null),
         photoURL: user.photoURL ?? null,
       });
-      // Redirect to role-specific destination when `next` is not provided
-      const destination =
-        next && next !== "/" ? next : role === "manager" ? "/manager/dashboard" : "/";
-      router.replace(destination);
+
+      // Send verification email via Firebase
+      await sendEmailVerification(user);
+      console.log("Verification email sent!");
+
+      // Redirect to verification page (logout happens there)
+      const verificationUrl = `/auth/verification?email=${encodeURIComponent(user.email || "")}`;
+      router.replace(verificationUrl);
     } catch (err: any) {
       console.error("Google registration error:", err);
       const info = mapAuthError(err);
