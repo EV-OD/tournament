@@ -14,7 +14,7 @@ export default function UserGuard({
 
   useEffect(() => {
     if (!loading) {
-      if (!user || role !== "user") {
+      if (!user || (role !== "user" && role !== "admin")) {
         router.replace("/auth/login");
       }
     }
@@ -28,7 +28,7 @@ export default function UserGuard({
     );
   }
 
-  if (!user || role !== "user") {
+  if (!user || (role !== "user" && role !== "admin")) {
     return null; // Will redirect
   }
 

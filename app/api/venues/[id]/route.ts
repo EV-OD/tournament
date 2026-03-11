@@ -101,6 +101,15 @@ export async function PATCH(
     const userRole = await getUserRole(uid);
     const isAdminUser = userRole === "admin";
     const isManager = venueData.managedBy === uid;
+
+    // Only admins can change status
+    if (body.status !== undefined && !isAdminUser) {
+      return NextResponse.json(
+        { error: "Only admins can change venue status" },
+        { status: 403 },
+      );
+    }
+
     if (!(isAdminUser || isManager)) {
       return NextResponse.json(
         { error: "Insufficient permissions" },
@@ -125,6 +134,14 @@ export async function PATCH(
     const updatePayload: any = {};
     for (const k of allowedFields) {
       if (body[k] !== undefined) updatePayload[k] = body[k];
+    }
+
+    // Allow status update only by admin
+    if (isAdminUser && body.status !== undefined) {
+      // Only allow 'pending', 'approved', 'rejected'
+      if (["pending", "approved", "rejected"].includes(body.status)) {
+        updatePayload.status = body.status;
+      }
     }
 
     updatePayload.updatedAt = FieldValue.serverTimestamp();

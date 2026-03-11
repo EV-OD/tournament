@@ -22,17 +22,21 @@ const VenueClient = ({ id }: VenueClientProps) => {
     const fetchVenue = async () => {
       try {
         setIsLoading(true);
+        console.log(`Fetching venue with ID: ${id}`);
         const docRef = doc(db, "venues", id);
         const docSnap = await getDoc(docRef);
+        console.log(`Venue fetch result:`, docSnap.exists(), docSnap.data());
         if (docSnap.exists()) {
           const venueData = { id: docSnap.id, ...docSnap.data() };
+          console.log(`Setting venue data:`, venueData);
           setVenue(venueData);
         } else {
+          console.log(`Venue document does not exist`);
           setError("Venue not found");
         }
       } catch (err) {
         console.error("Error fetching venue:", err);
-        setError("Failed to load venue");
+        setError(`Failed to load venue: ${err instanceof Error ? err.message : 'Unknown error'}`);
       } finally {
         setIsLoading(false);
       }

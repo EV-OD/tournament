@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { collection, getDocs, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -77,7 +76,7 @@ const VenueFilter = ({ setFilteredVenues, allVenues }: { setFilteredVenues: (ven
   }, [urlSearch]);
 
   useEffect(() => {
-    let filtered = allVenues;
+    let filtered = allVenues.filter((venue) => venue.status === "approved");
 
     if (searchTerm) {
       filtered = filtered.filter((venue) =>
@@ -394,12 +393,26 @@ const VenuesPage = () => {
 
   useEffect(() => {
     const fetchVenuesAndRatings = async () => {
-      const venuesCollection = await getDocs(collection(db, "venues"));
-      const venuesData = venuesCollection.docs.map((doc) => {
-        return { id: doc.id, ...doc.data() } as Venue;
-      });
-      setAllVenues(venuesData);
-      setFilteredVenues(venuesData);
+      try {
+        // Fetch approved venues from secure API endpoint instead of direct Firestore
+        const response = await fetch("/api/venues?limit=500");
+        const data = await response.json();
+        
+        if (!response.ok) {
+          console.error("Failed to fetch venues:", data.error);
+          setAllVenues([]);
+          setFilteredVenues([]);
+          return;
+        }
+
+        const venuesData = data.venues as Venue[];
+        setAllVenues(venuesData);
+        setFilteredVenues(venuesData);
+      } catch (error) {
+        console.error("Error fetching venues:", error);
+        setAllVenues([]);
+        setFilteredVenues([]);
+      }
     };
 
     fetchVenuesAndRatings();

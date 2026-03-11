@@ -173,29 +173,30 @@ export async function POST(req: Request) {
     }
 
     // Create venue doc (server-side)
-    const venueRef = await db.collection(COLLECTIONS.VENUES).add({
-      name: name.trim(),
-      description: description ? description.trim() : null,
-      sportType: SPORT_TYPES.includes(sportType)
-        ? (sportType as SportType)
-        : "futsal",
-      latitude: latitude || null,
-      longitude: longitude || null,
-      address: address ? address.trim() : null,
-      imageUrls,
-      pricePerHour: parseFloat(pricePerHour),
-      advancePercentage:
-        typeof advancePercentage === "number"
-          ? Math.max(0, Math.min(100, advancePercentage))
-          : DEFAULT_ADVANCE_PERCENT,
-      platformCommission:
-        typeof platformCommission === "number"
-          ? Math.max(0, Math.min(100, platformCommission))
-          : 0,
-      attributes,
-      createdAt: FieldValue.serverTimestamp(),
-      managedBy: uid,
-    });
+      const venueRef = await db.collection(COLLECTIONS.VENUES).add({
+        name: name.trim(),
+        description: description ? description.trim() : null,
+        sportType: SPORT_TYPES.includes(sportType)
+          ? (sportType as SportType)
+          : "futsal",
+        latitude: latitude || null,
+        longitude: longitude || null,
+        address: address ? address.trim() : null,
+        imageUrls,
+        pricePerHour: parseFloat(pricePerHour),
+        advancePercentage:
+          typeof advancePercentage === "number"
+            ? Math.max(0, Math.min(100, advancePercentage))
+            : DEFAULT_ADVANCE_PERCENT,
+        platformCommission:
+          typeof platformCommission === "number"
+            ? Math.max(0, Math.min(100, platformCommission))
+            : 0,
+        attributes,
+        createdAt: FieldValue.serverTimestamp(),
+        managedBy: uid,
+        status: "pending",
+      });
 
     // Initialize venueSlots document
     const venueSlots = {
@@ -219,6 +220,98 @@ export async function POST(req: Request) {
     return NextResponse.json({ id: venueRef.id }, { status: 201 });
   } catch (err: any) {
     console.error("Create venue (server) error:", err);
+    return NextResponse.json(
+      { error: err?.message || "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET /api/venues
+ *
+ * Description:
+ *   Retrieve a list of APPROVED venues only. This endpoint enforces server-side
+ *   filtering to ensure that pending and rejected venues are never exposed to
+ *   clients. This prevents clients from bypassing the approval workflow.
+ *
+ * Query Parameters:
+ *   - limit: number (optional, default 500) - max venues to return
+ *   - offset: number (optional, default 0) - pagination offset
+ *   - sportType: string (optional) - filter by sport type
+ *
+ * Successful Response (200):
+ *   {
+ *     venues: [
+ *       {
+ *         id: string,
+ *         name: string,
+ *         address: string,
+ *         latitude: number,
+ *         longitude: number,
+ *         pricePerHour: number,
+ *         sportType: string,
+ *         imageUrls: string[],
+ *         ... (other venue fields)
+ *       }
+ *     ],
+ *     total: number,
+ *     limit: number,
+ *     offset: number
+ *   }
+ *
+ * Error Response (500):
+ *   { error: '<error message>' }
+ *
+ * Security Notes:
+ *   - ONLY venues with status === "approved" are returned
+ *   - Filtering happens on the server, not the client
+ *   - This prevents unauthorized access to pending venues
+ *   - No authentication required (public endpoint)
+ *
+ * Implementation Notes:
+ *   - Uses where() clause to filter for approved status
+ *   - Returns full venue data to support maps, filtering, etc.
+ */
+export async function GET(req: Request) {
+  const sdkError = requireAdminSDK();
+  if (sdkError) return sdkError;
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "500"), 500);
+    const offset = parseInt(searchParams.get("offset") || "0");
+    const sportTypeFilter = searchParams.get("sportType");
+
+    // Build query with status filter - ALWAYS REQUIRED
+    let q = db.collection(COLLECTIONS.VENUES).where("status", "==", "approved");
+    
+    // Optional: filter by sport type
+    if (sportTypeFilter && SPORT_TYPES.includes(sportTypeFilter)) {
+      q = q.where("sportType", "==", sportTypeFilter);
+    }
+
+    const snap = await q.get();
+    
+    // Manually apply limit and offset since Firestore Admin SDK handles them differently
+    const allVenues = snap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    const paginatedVenues = allVenues.slice(offset, offset + limit);
+
+    return NextResponse.json(
+      {
+        venues: paginatedVenues,
+        total: allVenues.length,
+        limit,
+        offset,
+      },
+      { status: 200 },
+    );
+  } catch (err: any) {
+    console.error("Fetch venues (server) error:", err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 },

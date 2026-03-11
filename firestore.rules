@@ -120,6 +120,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Archived Venues collection
+    // Only admins can read archived venues (for admin panel)
+    // All writes must go through server-side endpoints
+    match /archivedVenues/{venueId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Catch-all: deny client-side writes everywhere by default. Keep reads
     // permissive where explicitly allowed above. Server/Admin SDK operations
     // are not affected by security rules.

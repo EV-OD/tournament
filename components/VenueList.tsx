@@ -37,10 +37,12 @@ export default function VenueList() {
         where("managedBy", "==", user.uid)
       );
       const querySnapshot = await getDocs(q);
-      const venueList = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Venue[];
+      const venueList = querySnapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        .filter((venue) => venue.status === "approved") as Venue[];
       setVenues(venueList);
       setLoading(false);
     };

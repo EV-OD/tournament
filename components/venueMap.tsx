@@ -184,6 +184,34 @@ const VenueMap = () => {
   const [displayedVenues, setDisplayedVenues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    const fetchVenues = async () => {
+      try {
+        // Fetch approved venues from secure API endpoint instead of direct Firestore
+        const response = await fetch("/api/venues?limit=500");
+        const data = await response.json();
+        
+        if (!response.ok) {
+          console.error("Failed to fetch venues:", data.error);
+          setAllVenues([]);
+          setDisplayedVenues([]);
+          setLoading(false);
+          return;
+        }
+
+        const venueList = data.venues || [];
+        setAllVenues(venueList);
+        setDisplayedVenues(venueList);
+      } catch (error) {
+        console.error("Error fetching venues:", error);
+        setAllVenues([]);
+        setDisplayedVenues([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchVenues();
+  }, []);
 
 
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
