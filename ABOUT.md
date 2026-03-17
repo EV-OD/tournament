@@ -13,7 +13,6 @@ Finding and booking futsal venues has traditionally been a hassle:
 - Manual payment verification causing delays
 - No centralized platform to compare venues
 
-Fursal eliminates these pain points by bringing everything online in one seamless platform.
 
 ## How It Works
 
